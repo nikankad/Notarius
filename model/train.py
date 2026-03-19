@@ -1,11 +1,15 @@
 
 import torch.nn as nn 
 import torch
-from torch_optimizer import NovoGrad 
-from model.model import QuartzNetBxR, collate_fn
+from helpers import collate_fn, collate_fn_test
+from model import QuartzNetBxR
 from torchaudio.datasets import LIBRISPEECH
 from torch.utils.data import DataLoader
-root = "/home/student/GOATS422/Notarius/Datasets"
+from torch_optimizer import NovoGrad
+root = "/home/student/GOATS422/Notarius/datasets"
+# settings
+torch.set_num_threads(24)
+torch.backends.cudnn.benchmark = True
 
 train_ds = LIBRISPEECH(root=root, url="train-clean-100",download=False)
 val_ds   = LIBRISPEECH(root=root, url="dev-clean",download=False)
@@ -15,7 +19,7 @@ test_ds  = LIBRISPEECH(root=root, url="test-clean",download=False)
 #initialize dataloader
 train_loader = DataLoader(train_ds, batch_size=64, shuffle=True,  collate_fn=collate_fn, num_workers=24, pin_memory=True)
 val_loader   = DataLoader(val_ds,   batch_size=64, shuffle=False, collate_fn=collate_fn, num_workers=24)
-test_loader  = DataLoader(test_ds,  batch_size=64, shuffle=False, collate_fn=collate_fn, num_workers=24)
+test_loader  = DataLoader(test_ds,  batch_size=64, shuffle=False, collate_fn=collate_fn_test, num_workers=24)
 
 
 def train_model(B=5, R=5, num_epochs=10):

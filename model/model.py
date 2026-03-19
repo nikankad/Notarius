@@ -2,9 +2,6 @@
 import torch.nn as nn
 import torch
 
-# settings
-torch.set_num_threads(24)
-torch.backends.cudnn.benchmark = True
 
 class TSCConv(nn.Module):
     def __init__(self, in_channel, out_channel, kernel_size, use_relu=True):
