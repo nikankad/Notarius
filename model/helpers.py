@@ -23,9 +23,10 @@ speed_perturb = SpeedPerturbation(
 )
 
 spec_aug_mask = nn.Sequential(
-        torchaudio.transforms.FrequencyMasking(freq_mask_param=12),
-        torchaudio.transforms.TimeMasking(time_mask_param=20),
+    torchaudio.transforms.FrequencyMasking(freq_mask_param=12),
+    torchaudio.transforms.TimeMasking(time_mask_param=20),
 )
+
 
 def spec_aug(spectrogram):
     return spec_aug_mask(spectrogram)
@@ -66,7 +67,9 @@ def collate_fn(batch):
 
     return tensors, targets, input_lengths, target_lengths
 
-#this collate method will not apply the spec augment transformationl.
+# this collate method will not apply the spec augment transformationl.
+
+
 def collate_fn_test(batch):
     waveforms, _, transcripts, *_ = zip(*batch)
 

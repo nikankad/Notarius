@@ -1,10 +1,8 @@
 #imports
 import torchaudio
 import os
-from torch.utils.data import DataLoader
 import torch.nn as nn 
 import torch
-from torch.nn.utils.rnn import pad_sequence
 torch.set_num_threads(24)
 
 root = os.getenv("DATASET_PATH", "home/student/GOATS422")
