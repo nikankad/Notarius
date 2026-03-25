@@ -4,4 +4,5 @@ first we want to import our dataset (https://www.openslr.org/12), the audio is a
 
 
 
-we fixed the padding issue by using buckets, bucketing will arrange audio files of the similar size
+we fixed the padding issue by using buckets, bucketing will arrange audio files of the similar size.
+Also added cosine annealing and lr warmup with mixed point percision

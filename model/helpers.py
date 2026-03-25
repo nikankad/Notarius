@@ -1,7 +1,12 @@
+import csv
+import os
+import json
+import random
 import torch.nn as nn
 import torch
 from torchaudio.transforms import MelSpectrogram, AmplitudeToDB, SpeedPerturbation
 from torch.nn.utils.rnn import pad_sequence
+from torch.utils.data import Sampler
 import torchaudio
 # define vocabulary
 chars = "abcdefghijklmnopqrstuvwxyz '"  # 26 + space + apostrophe = 28 chars
@@ -64,6 +69,74 @@ def collate_fn_speed_perturb(batch):
     return tensors, targets, input_lengths, target_lengths
 
 
+
+
+def get_dataset_lengths(dataset):
+    """Read audio lengths in frames, cached to disk after the first run."""
+    cache_path = os.path.join(dataset._path, "_lengths_cache.json")
+
+    if os.path.exists(cache_path):
+        with open(cache_path) as f:
+            return json.load(f)
+
+    print(f"Building lengths cache at {cache_path} (one-time)...")
+    lengths = []
+    for fileid in dataset._walker:
+        speaker_id, chapter_id, _ = fileid.split("-", 2)
+        file_path = os.path.join(dataset._path, speaker_id, chapter_id, f"{fileid}.flac")
+        lengths.append(torchaudio.info(file_path).num_frames)
+
+    with open(cache_path, "w") as f:
+        json.dump(lengths, f)
+
+    return lengths
+
+
+class BucketBatchSampler(Sampler):
+    """Batch indices so that each batch contains similarly-lengthed sequences."""
+    def __init__(self, lengths, batch_size, shuffle=True):
+        self.lengths = lengths
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+
+    def __iter__(self):
+        sorted_indices = sorted(range(len(self.lengths)), key=lambda i: self.lengths[i])
+        batches = [sorted_indices[i:i + self.batch_size]
+                   for i in range(0, len(sorted_indices), self.batch_size)]
+        if self.shuffle:
+            random.shuffle(batches)
+        for batch in batches:
+            yield batch
+
+    def __len__(self):
+        return (len(self.lengths) + self.batch_size - 1) // self.batch_size
+
+
+def log_epoch(csv_path, epoch, train_loss, val_loss, train_wer, val_wer,
+              prev_train_loss=None, prev_val_loss=None, prev_train_wer=None, prev_val_wer=None):
+    def pct(current, previous):
+        if previous is None:
+            return ""
+        return f"{((current - previous) / previous) * 100:.2f}"
+
+    path = os.path.join(csv_path)
+    os.makedirs(os.path.dirname(path) if os.path.dirname(path) else ".", exist_ok=True)
+    write_header = not os.path.exists(path)
+    with open(path, "a", newline="") as f:
+        writer = csv.writer(f)
+        if write_header:
+            writer.writerow([
+                "epoch",
+                "train_loss", "val_loss", "train_loss_delta_%", "val_loss_delta_%",
+                "train_wer",  "val_wer",  "train_wer_delta_%",  "val_wer_delta_%",
+            ])
+        writer.writerow([
+            epoch,
+            f"{train_loss:.6f}", f"{val_loss:.6f}",
+            pct(train_loss, prev_train_loss), pct(val_loss, prev_val_loss),
+            f"{train_wer:.4f}",  f"{val_wer:.4f}",
+            pct(train_wer,  prev_train_wer),  pct(val_wer,  prev_val_wer),
+        ])
 
 
 def collate_fn_test(batch):

@@ -1,9 +1,10 @@
+import csv
 import torch.nn as nn
 import torch
 import time
 from pathlib import Path
 from torchaudio.datasets import LIBRISPEECH
-from helpers import collate_fn_speed_perturb, collate_fn_test, blank, idx2char
+from helpers import collate_fn_speed_perturb, collate_fn_test, blank, idx2char, get_dataset_lengths, BucketBatchSampler, log_epoch
 from model import QuartzNetBxR
 # from dataset import LocalLibriSpeechDataset
 from torch.utils.data import DataLoader, Subset
@@ -18,9 +19,9 @@ load_dotenv()
 root = str(os.getenv("ROOT"))
 # settings
 # torch.set_num_threads(8)
-# torch.backends.cudnn.benchmark = True
+torch.backends.cudnn.benchmark = True
 
-train_ds = LIBRISPEECH(root=root, url="train-clean-500", download=False)
+train_ds = LIBRISPEECH(root=root, url="train-other-500", download=False)
 val_ds = LIBRISPEECH(root=root, url="dev-clean", download=False)
 test_ds = LIBRISPEECH(root=root, url="test-clean", download=False)
 
@@ -29,12 +30,17 @@ test_ds = LIBRISPEECH(root=root, url="test-clean", download=False)
 # val_ds = Subset(val_ds, range(len(val_ds) // 5))
 # test_ds = Subset(test_ds, range(len(test_ds) // 5))
 # initialize dataloader
-train_loader = DataLoader(train_ds, batch_size=64, shuffle=True,  collate_fn=collate_fn_speed_perturb,
-                          num_workers=32, pin_memory=True, persistent_workers=True, prefetch_factor=2)
-val_loader = DataLoader(val_ds,   batch_size=64, shuffle=False,
-                        collate_fn=collate_fn_test, num_workers=32, persistent_workers=True)
-test_loader = DataLoader(test_ds,  batch_size=64, shuffle=False,
-                         collate_fn=collate_fn_test, num_workers=32, persistent_workers=True)
+print("Pre-computing dataset lengths for bucket batching...")
+train_sampler = BucketBatchSampler(get_dataset_lengths(train_ds), batch_size=128, shuffle=True)
+val_sampler   = BucketBatchSampler(get_dataset_lengths(val_ds),   batch_size=128, shuffle=False)
+test_sampler  = BucketBatchSampler(get_dataset_lengths(test_ds),  batch_size=128, shuffle=False)
+
+train_loader = DataLoader(train_ds, batch_sampler=train_sampler, collate_fn=collate_fn_speed_perturb,
+                          num_workers=16, pin_memory=True, persistent_workers=True, prefetch_factor=2)
+val_loader = DataLoader(val_ds,   batch_sampler=val_sampler,
+                        collate_fn=collate_fn_test, num_workers=16, persistent_workers=True)
+test_loader = DataLoader(test_ds,  batch_sampler=test_sampler,
+                         collate_fn=collate_fn_test, num_workers=16, persistent_workers=True)
 
 
 def _format_seconds(seconds: float) -> str:
@@ -132,7 +138,7 @@ def _build_inference_payload(model, B: int, R: int, epoch: int, best_val_loss: f
     }
 
 
-def train_model(B=5, R=5, num_epochs=10, checkpoint_dir="outputs/checkpoints", save_every=10, resume_from=None):
+def train_model(B=5, R=5, num_epochs=10, warmup_epochs=5, checkpoint_dir="outputs/checkpoints", save_every=10, resume_from=None, log_csv="outputs/training_log.csv"):
     # Initialize model, optimizer, and loss function
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -146,9 +152,19 @@ def train_model(B=5, R=5, num_epochs=10, checkpoint_dir="outputs/checkpoints", s
         f"Starting training for {num_epochs} epochs with QuartzNet B={B}, R={R}")
 
     model = QuartzNetBxR(n_mels=64, n_classes=29, B=B, R=R).to(device)
-    optimizer = NovoGrad(model.parameters(), lr=0.01,
+    optimizer = NovoGrad(model.parameters(), lr=0.04,
                          betas=(0.95, 0.5), weight_decay=0.001)
     criterion = nn.CTCLoss(blank=28, zero_infinity=True)
+    scaler = torch.amp.GradScaler('cuda')  # type: ignore[attr-defined]
+    warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+        optimizer, start_factor=0.01, end_factor=1.0, total_iters=warmup_epochs
+    )
+    cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=max(1, num_epochs - warmup_epochs), eta_min=1e-6
+    )
+    scheduler = torch.optim.lr_scheduler.SequentialLR(
+        optimizer, schedulers=[warmup_scheduler, cosine_scheduler], milestones=[warmup_epochs]
+    )
     checkpoint_dir_path = _resolve_checkpoint_dir(checkpoint_dir)
     checkpoint_dir_path.mkdir(parents=True, exist_ok=True)
     print(f"Checkpoints will be saved to: {checkpoint_dir_path}")
@@ -179,6 +195,9 @@ def train_model(B=5, R=5, num_epochs=10, checkpoint_dir="outputs/checkpoints", s
         train_wers = checkpoint.get("train_wers", [])
         val_wers = checkpoint.get("val_wers", [])
         best_val_loss = checkpoint.get("best_val_loss", float("inf"))
+        scheduler_state = checkpoint.get("scheduler_state_dict")
+        if scheduler_state is not None:
+            scheduler.load_state_dict(scheduler_state)
         print(f"Resumed from checkpoint: {resume_path} (starting at epoch {start_epoch + 1})")
 
     print("-" * 90)
@@ -206,21 +225,23 @@ def train_model(B=5, R=5, num_epochs=10, checkpoint_dir="outputs/checkpoints", s
 
             optimizer.zero_grad()
 
-            outputs = model(inputs)
-            train_word_errors, train_ref_words = _batch_word_errors_and_count(
-                outputs, targets, target_lengths
-            )
-            total_train_word_errors += train_word_errors
-            total_train_ref_words += train_ref_words
+            with torch.autocast(device_type="cuda"):
+                outputs = model(inputs)
+                train_word_errors, train_ref_words = _batch_word_errors_and_count(
+                    outputs, targets, target_lengths
+                )
+                total_train_word_errors += train_word_errors
+                total_train_ref_words += train_ref_words
 
-            outputs = outputs.permute(2, 0, 1).log_softmax(dim=2)
+                outputs = outputs.permute(2, 0, 1).log_softmax(dim=2)
 
-            adjusted_lengths = ((input_lengths - 1) // 2) + 1
-            loss = criterion(outputs, targets,
-                             adjusted_lengths, target_lengths)
+                adjusted_lengths = ((input_lengths - 1) // 2) + 1
+                loss = criterion(outputs, targets,
+                                 adjusted_lengths, target_lengths)
 
-            loss.backward()
-            optimizer.step()
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
             total_train_loss += loss.item()
 
             batch_number = batch_idx + 1
@@ -303,19 +324,35 @@ def train_model(B=5, R=5, num_epochs=10, checkpoint_dir="outputs/checkpoints", s
         epoch_duration = time.time() - epoch_start_time
         eta_epochs_seconds = (num_epochs - (epoch + 1)) * epoch_duration
 
+        scheduler.step()
+        current_lr = scheduler.get_last_lr()[0]
+
         print(
             f"Epoch {epoch+1}/{num_epochs} complete | "
             f"Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f} | "
             f"Train WER: {avg_train_wer:.2f}% | Val WER: {avg_val_wer:.2f}% | "
+            f"LR: {current_lr:.2e} | "
             f"Epoch Time: {_format_seconds(epoch_duration)} | "
             f"Val Time: {_format_seconds(val_duration)} | "
             f"ETA to finish: {_format_seconds(eta_epochs_seconds)}"
+        )
+
+        log_epoch(
+            csv_path=log_csv,
+            epoch=epoch + 1,
+            train_loss=avg_train_loss, val_loss=avg_val_loss,
+            train_wer=avg_train_wer,   val_wer=avg_val_wer,
+            prev_train_loss=train_losses[-2] if len(train_losses) > 1 else None,
+            prev_val_loss=val_losses[-2]     if len(val_losses)   > 1 else None,
+            prev_train_wer=train_wers[-2]    if len(train_wers)   > 1 else None,
+            prev_val_wer=val_wers[-2]        if len(val_wers)     > 1 else None,
         )
 
         checkpoint_payload = {
             "epoch": epoch,
             "model_state_dict": model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
+            "scheduler_state_dict": scheduler.state_dict(),
             "train_losses": train_losses,
             "val_losses": val_losses,
             "train_wers": train_wers,
@@ -370,4 +407,4 @@ def train_model(B=5, R=5, num_epochs=10, checkpoint_dir="outputs/checkpoints", s
 
 
 if __name__ == "__main__":
-    train_model(B=5, R=5, num_epochs=100, resume_from="/home/xz/GOATS422/Notarius/outputs/checkpoints/epoch_090.pt")
+    train_model(B=5, R=5, num_epochs=50)

@@ -1,19 +1,20 @@
 #imports
 import torch.nn as nn 
 import torch
-torch.set_num_threads(12)
-
 class TSCConv(nn.Module):
-    def __init__(self, in_channel, out_channel, kernel_size, stride=1):
+    def __init__(self, in_channel, out_channel, kernel_size, stride=1, relu=True):
         super().__init__()
         padding = (kernel_size - 1) // 2
-        self.net = nn.Sequential(
+        layers = [
             nn.Conv1d(in_channel, in_channel, kernel_size, stride, padding, groups=in_channel),
             nn.Conv1d(in_channel, out_channel, kernel_size=1),
             nn.BatchNorm1d(out_channel),
-            nn.ReLU()  
-        )
-    def forward(self,x):
+        ]
+        if relu:
+            layers.append(nn.ReLU())
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, x):
         return self.net(x)
     
 class QuartNetBlock(nn.Module):
@@ -22,7 +23,8 @@ class QuartNetBlock(nn.Module):
     
         self.net = nn.Sequential(
             TSCConv(in_channel, out_channel, kernel_size),
-            *[TSCConv(out_channel, out_channel, kernel_size) for _ in range(R-1)]
+            *[TSCConv(out_channel, out_channel, kernel_size) for _ in range(R-2)],
+            TSCConv(out_channel, out_channel, kernel_size, relu=False),
         )
         #residual 
         self.residual = nn.Sequential(
