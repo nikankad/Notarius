@@ -3,7 +3,7 @@ import torch
 import time
 from pathlib import Path
 from torchaudio.datasets import LIBRISPEECH
-from helpers import collate_fn, collate_fn_test
+from helpers import collate_fn, collate_fn_test, blank, idx2char
 from model import QuartzNetBxR
 # from dataset import LocalLibriSpeechDataset
 from torch.utils.data import DataLoader, Subset
@@ -59,6 +59,65 @@ def _save_checkpoint(path: Path, payload: dict):
     torch.save(payload, path)
 
 
+def _ctc_greedy_decode(token_ids):
+    decoded = []
+    prev = None
+    for token in token_ids:
+        if token != blank and token != prev:
+            decoded.append(idx2char[token])
+        prev = token
+    return "".join(decoded)
+
+
+def _word_edit_distance(ref_words, hyp_words):
+    rows = len(ref_words) + 1
+    cols = len(hyp_words) + 1
+    dp = [[0] * cols for _ in range(rows)]
+
+    for i in range(rows):
+        dp[i][0] = i
+    for j in range(cols):
+        dp[0][j] = j
+
+    for i in range(1, rows):
+        for j in range(1, cols):
+            if ref_words[i - 1] == hyp_words[j - 1]:
+                dp[i][j] = dp[i - 1][j - 1]
+            else:
+                dp[i][j] = 1 + min(
+                    dp[i - 1][j],
+                    dp[i][j - 1],
+                    dp[i - 1][j - 1],
+                )
+
+    return dp[-1][-1]
+
+
+def _batch_word_errors_and_count(logits, targets, target_lengths):
+    # logits: (batch, classes, time)
+    pred_ids = logits.argmax(dim=1).detach().cpu()
+    targets_cpu = targets.detach().cpu()
+    target_lengths_cpu = target_lengths.detach().cpu()
+
+    total_word_errors = 0
+    total_ref_words = 0
+
+    for i in range(pred_ids.size(0)):
+        pred_text = _ctc_greedy_decode(pred_ids[i].tolist())
+
+        target_len = int(target_lengths_cpu[i].item())
+        target_tokens = targets_cpu[i, :target_len].tolist()
+        ref_text = "".join(idx2char[token] for token in target_tokens)
+
+        ref_words = ref_text.split()
+        hyp_words = pred_text.split()
+
+        total_word_errors += _word_edit_distance(ref_words, hyp_words)
+        total_ref_words += len(ref_words)
+
+    return total_word_errors, total_ref_words
+
+
 def _build_inference_payload(model, B: int, R: int, epoch: int, best_val_loss: float):
     return {
         "epoch": epoch,
@@ -99,6 +158,8 @@ def train_model(B=5, R=5, num_epochs=10, checkpoint_dir="outputs/checkpoints", s
 
     train_losses = []
     val_losses = []
+    train_wers = []
+    val_wers = []
     log_interval = max(1, len(train_loader) // 20)
 
     if resume_from:
@@ -115,6 +176,8 @@ def train_model(B=5, R=5, num_epochs=10, checkpoint_dir="outputs/checkpoints", s
         start_epoch = checkpoint["epoch"] + 1
         train_losses = checkpoint.get("train_losses", [])
         val_losses = checkpoint.get("val_losses", [])
+        train_wers = checkpoint.get("train_wers", [])
+        val_wers = checkpoint.get("val_wers", [])
         best_val_loss = checkpoint.get("best_val_loss", float("inf"))
         print(f"Resumed from checkpoint: {resume_path} (starting at epoch {start_epoch + 1})")
 
@@ -126,6 +189,8 @@ def train_model(B=5, R=5, num_epochs=10, checkpoint_dir="outputs/checkpoints", s
         # Training
         model.train()
         total_train_loss = 0.0
+        total_train_word_errors = 0
+        total_train_ref_words = 0
         print(f"\nEpoch {epoch+1}/{num_epochs} | Training")
         train_start_time = time.time()
 
@@ -142,6 +207,12 @@ def train_model(B=5, R=5, num_epochs=10, checkpoint_dir="outputs/checkpoints", s
             optimizer.zero_grad()
 
             outputs = model(inputs)
+            train_word_errors, train_ref_words = _batch_word_errors_and_count(
+                outputs, targets, target_lengths
+            )
+            total_train_word_errors += train_word_errors
+            total_train_ref_words += train_ref_words
+
             outputs = outputs.permute(2, 0, 1).log_softmax(dim=2)
 
             adjusted_lengths = ((input_lengths - 1) // 2) + 1
@@ -160,21 +231,33 @@ def train_model(B=5, R=5, num_epochs=10, checkpoint_dir="outputs/checkpoints", s
                 eta_seconds = avg_batch_time * \
                     (len(train_loader) - batch_number)
                 progress = (batch_number / len(train_loader)) * 100
+                running_train_wer = (
+                    total_train_word_errors / max(1, total_train_ref_words)
+                ) * 100
                 print(
                     f"Epoch {epoch+1}/{num_epochs} | "
                     f"Train {batch_number:>4}/{len(train_loader)} ({progress:5.1f}%) | "
                     f"Loss: {loss.item():.4f} | Avg: {running_avg_loss:.4f} | "
+                    f"WER: {running_train_wer:.2f}% | "
                     f"ETA: {_format_seconds(eta_seconds)}"
                 )
 
         avg_train_loss = total_train_loss / len(train_loader)
+        avg_train_wer = (total_train_word_errors / max(1, total_train_ref_words)) * 100
         train_losses.append(avg_train_loss)
+        train_wers.append(avg_train_wer)
         train_duration = time.time() - train_start_time
-        print(f"Epoch {epoch+1}/{num_epochs} | Train done | Avg Loss: {avg_train_loss:.4f} | Time: {_format_seconds(train_duration)}")
+        print(
+            f"Epoch {epoch+1}/{num_epochs} | Train done | "
+            f"Avg Loss: {avg_train_loss:.4f} | WER: {avg_train_wer:.2f}% | "
+            f"Time: {_format_seconds(train_duration)}"
+        )
 
         # Validation
         model.eval()
         total_val_loss = 0.0
+        total_val_word_errors = 0
+        total_val_ref_words = 0
         print(f"Epoch {epoch+1}/{num_epochs} | Validation")
         val_start_time = time.time()
         with torch.no_grad():
@@ -185,6 +268,12 @@ def train_model(B=5, R=5, num_epochs=10, checkpoint_dir="outputs/checkpoints", s
                 target_lengths = target_lengths.to(device)
 
                 outputs = model(inputs)
+                val_word_errors, val_ref_words = _batch_word_errors_and_count(
+                    outputs, targets, target_lengths
+                )
+                total_val_word_errors += val_word_errors
+                total_val_ref_words += val_ref_words
+
                 outputs = outputs.permute(2, 0, 1).log_softmax(dim=2)
 
                 adjusted_lengths = ((input_lengths - 1) // 2) + 1
@@ -196,14 +285,20 @@ def train_model(B=5, R=5, num_epochs=10, checkpoint_dir="outputs/checkpoints", s
                 if val_batch_number % log_interval == 0 or val_batch_number == len(val_loader):
                     running_val_avg_loss = total_val_loss / (val_batch_idx + 1)
                     progress = (val_batch_number / len(val_loader)) * 100
+                    running_val_wer = (
+                        total_val_word_errors / max(1, total_val_ref_words)
+                    ) * 100
                     print(
                         f"Epoch {epoch+1}/{num_epochs} | "
                         f"Val   {val_batch_number:>4}/{len(val_loader)} ({progress:5.1f}%) | "
-                        f"Loss: {val_loss.item():.4f} | Avg: {running_val_avg_loss:.4f}"
+                        f"Loss: {val_loss.item():.4f} | Avg: {running_val_avg_loss:.4f} | "
+                        f"WER: {running_val_wer:.2f}%"
                     )
 
         avg_val_loss = total_val_loss / len(val_loader)
+        avg_val_wer = (total_val_word_errors / max(1, total_val_ref_words)) * 100
         val_losses.append(avg_val_loss)
+        val_wers.append(avg_val_wer)
         val_duration = time.time() - val_start_time
         epoch_duration = time.time() - epoch_start_time
         eta_epochs_seconds = (num_epochs - (epoch + 1)) * epoch_duration
@@ -211,6 +306,7 @@ def train_model(B=5, R=5, num_epochs=10, checkpoint_dir="outputs/checkpoints", s
         print(
             f"Epoch {epoch+1}/{num_epochs} complete | "
             f"Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f} | "
+            f"Train WER: {avg_train_wer:.2f}% | Val WER: {avg_val_wer:.2f}% | "
             f"Epoch Time: {_format_seconds(epoch_duration)} | "
             f"Val Time: {_format_seconds(val_duration)} | "
             f"ETA to finish: {_format_seconds(eta_epochs_seconds)}"
@@ -222,6 +318,8 @@ def train_model(B=5, R=5, num_epochs=10, checkpoint_dir="outputs/checkpoints", s
             "optimizer_state_dict": optimizer.state_dict(),
             "train_losses": train_losses,
             "val_losses": val_losses,
+            "train_wers": train_wers,
+            "val_wers": val_wers,
             "best_val_loss": best_val_loss,
             "config": {
                 "B": B,
@@ -272,4 +370,4 @@ def train_model(B=5, R=5, num_epochs=10, checkpoint_dir="outputs/checkpoints", s
 
 
 if __name__ == "__main__":
-    train_model(B=5, R=5, num_epochs=10)
+    train_model(B=5, R=5, num_epochs=100, resume_from="/home/xz/GOATS422/Notarius/outputs/checkpoints/epoch_090.pt")

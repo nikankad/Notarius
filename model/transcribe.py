@@ -19,7 +19,8 @@ def _ctc_greedy_decode(token_ids):
 
 
 def _load_model(checkpoint_path: Path, device: torch.device):
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    checkpoint = torch.load(
+        checkpoint_path, map_location=device, weights_only=True)
 
     config = checkpoint.get("config", {})
     model = QuartzNetBxR(
@@ -40,7 +41,8 @@ def _load_model(checkpoint_path: Path, device: torch.device):
 
 def transcribe_audio(audio_path: Path, checkpoint_path: Path, device: str = "auto") -> str:
     if device == "auto":
-        resolved_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        resolved_device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
     else:
         resolved_device = torch.device(device)
 
@@ -63,11 +65,13 @@ def transcribe_audio(audio_path: Path, checkpoint_path: Path, device: str = "aut
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Transcribe audio with a trained QuartzNet checkpoint")
-    parser.add_argument("--audio", required=True, help="Path to input wav file")
+    parser = argparse.ArgumentParser(
+        description="Transcribe audio with a trained QuartzNet checkpoint")
+    parser.add_argument("--audio", required=True,
+                        help="Path to input wav file")
     parser.add_argument(
         "--checkpoint",
-        default="/home/student/GOATS422/Notarius/outputs/checkpoints/best.pt",
+        default="/home/xz/GOATS422/Notarius/outputs/checkpoints/epoch_080.pt",
         help="Path to model checkpoint (default: outputs/checkpoints/best.pt)",
     )
     parser.add_argument(
@@ -85,7 +89,8 @@ def main():
     if not audio_path.exists():
         raise FileNotFoundError(f"Audio file not found: {audio_path}")
     if not checkpoint_path.exists():
-        raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
+        raise FileNotFoundError(
+            f"Checkpoint file not found: {checkpoint_path}")
 
     transcript = transcribe_audio(audio_path, checkpoint_path, args.device)
     print(transcript)
