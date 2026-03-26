@@ -47,16 +47,27 @@ def decode(indices):
 def collate_fn_speed_perturb(batch):
     waveforms, _, transcripts, *_ = zip(*batch)
 
-    # Apply random speed perturbation on CPU (resampling is not GPU-friendly)
-    perturbed = [speed_perturb(w)[0] for w in waveforms]
+    # Apply random speed perturbation per utterance for training-time augmentation.
+    if random.random() < 0.667:
+        waveforms = [speed_perturb(w)[0] for w in waveforms]
 
-    # Encode transcripts (cheap, keep on CPU)
+    # Compute mel features per sample (no raw-audio padding first)
+    feats = [spec_transform(w).squeeze(0).transpose(0, 1) for w in waveforms]
+    # each feat: (time, n_mels)
+
+    # Frame lengths for CTC input_lengths
+    input_lengths = torch.tensor([f.shape[0] for f in feats], dtype=torch.long)
+
+    #  Pad along time and convert to model shape (batch, n_mels, time)
+    tensors = pad_sequence(feats, batch_first=True)          # (B, T, M)
+    tensors = tensors.transpose(1, 2).contiguous()           # (B, M, T)
+
+    # Encode transcripts
     encoded = [torch.tensor(encode(t), dtype=torch.long) for t in transcripts]
     target_lengths = torch.tensor([len(e) for e in encoded], dtype=torch.long)
     targets = pad_sequence(encoded, batch_first=True, padding_value=0)
 
-    # Return raw waveforms as a list — mel spectrogram computed on GPU in training loop
-    return perturbed, targets, target_lengths
+    return tensors, targets, input_lengths, target_lengths
 
 
 
@@ -91,13 +102,14 @@ class BucketBatchSampler(Sampler):
     `batch_size`.  This keeps padding overhead constant regardless of batch size.
     """
     def __init__(self, lengths, batch_size, shuffle=True, num_buckets=200):
-        self.lengths = lengths
         self.batch_size = batch_size
         self.shuffle = shuffle
         self.num_buckets = num_buckets
+        self.sorted_indices = sorted(range(len(lengths)), key=lambda i: lengths[i])
+        self._total = len(lengths)
 
     def __iter__(self):
-        sorted_indices = sorted(range(len(self.lengths)), key=lambda i: self.lengths[i])
+        sorted_indices = self.sorted_indices
         bucket_size = max(self.batch_size, len(sorted_indices) // self.num_buckets)
         buckets = [sorted_indices[i:i + bucket_size]
                    for i in range(0, len(sorted_indices), bucket_size)]
@@ -115,7 +127,7 @@ class BucketBatchSampler(Sampler):
             yield batch
 
     def __len__(self):
-        return (len(self.lengths) + self.batch_size - 1) // self.batch_size
+        return (self._total + self.batch_size - 1) // self.batch_size
 
 
 def log_epoch(csv_path, epoch, train_loss, val_loss, train_wer, val_wer,

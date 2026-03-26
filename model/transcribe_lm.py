@@ -52,7 +52,8 @@ def _build_lm_decoder(arpa_path: Path, alpha: float = 0.5, beta: float = 1.5, be
         str(arpa_path),
         unigrams=None,
         alpha=alpha,
-        beta=beta
+        beta=beta,
+        unk_score_offset=-10.0,
     )
     return decoder
 
@@ -70,10 +71,14 @@ def _load_model(checkpoint_path: Path, device: torch.device):
         B=config.get("B", 5),
         R=config.get("R", 5),
     ).to(device)
-    if "model_state_dict" in checkpoint:
-        model.load_state_dict(checkpoint["model_state_dict"])
-    else:
-        model.load_state_dict(checkpoint)
+
+    state_dict = checkpoint.get("model_state_dict", checkpoint)
+
+    # Handle torch.compile() wrapped checkpoints (keys prefixed with "_orig_mod.")
+    if any(k.startswith("_orig_mod.") for k in state_dict.keys()):
+        state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
+
+    model.load_state_dict(state_dict)
     model.eval()
     return model
 

@@ -185,3 +185,4 @@ cython_debug/
 datasets/*
 !datasets/README.txt
 outputs/checkpoints/*
+outputs/checkpoints_speed_perturb2*

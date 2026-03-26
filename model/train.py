@@ -34,11 +34,11 @@ val_sampler   = BucketBatchSampler(get_dataset_lengths(val_ds),   batch_size=160
 test_sampler  = BucketBatchSampler(get_dataset_lengths(test_ds),  batch_size=160, shuffle=False)
 
 train_loader = DataLoader(train_ds, batch_sampler=train_sampler, collate_fn=collate_fn_speed_perturb,
-                          num_workers=16, pin_memory=True, persistent_workers=True, prefetch_factor=2)
+                          num_workers=16, pin_memory=True, persistent_workers=True, prefetch_factor=4)
 val_loader = DataLoader(val_ds,   batch_sampler=val_sampler,
-                        collate_fn=collate_fn_test, num_workers=16, persistent_workers=True)
+                        collate_fn=collate_fn_test, num_workers=16, persistent_workers=True, pin_memory=True)
 test_loader = DataLoader(test_ds,  batch_sampler=test_sampler,
-                         collate_fn=collate_fn_test, num_workers=16, persistent_workers=True)
+                         collate_fn=collate_fn_test, num_workers=16, persistent_workers=True,pin_memory=True)
 
 
 def _format_seconds(seconds: float) -> str:
@@ -152,6 +152,7 @@ def train_model(B=5, R=5, num_epochs=10, warmup_epochs=5, lr=0.04, checkpoint_di
     model = QuartzNetBxR(n_mels=64, n_classes=29, B=B, R=R).to(device)
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Model parameters: {total_params:,}")
+    model = torch.compile(model)
     optimizer = NovoGrad(model.parameters(), lr=lr,
                          betas=(0.95, 0.5), weight_decay=0.001)
     criterion = nn.CTCLoss(blank=28, zero_infinity=True)
@@ -160,7 +161,7 @@ def train_model(B=5, R=5, num_epochs=10, warmup_epochs=5, lr=0.04, checkpoint_di
         optimizer, start_factor=0.01, end_factor=1.0, total_iters=warmup_epochs
     )
     cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=max(1, num_epochs - warmup_epochs), eta_min=1e-6
+        optimizer, T_max=max(1, num_epochs - warmup_epochs), eta_min=1e-3
     )
     scheduler = torch.optim.lr_scheduler.SequentialLR(
         optimizer, schedulers=[warmup_scheduler, cosine_scheduler], milestones=[warmup_epochs]
@@ -290,12 +291,6 @@ def train_model(B=5, R=5, num_epochs=10, warmup_epochs=5, lr=0.04, checkpoint_di
                 target_lengths = target_lengths.to(device)
 
                 outputs = model(inputs)
-                val_word_errors, val_ref_words = _batch_word_errors_and_count(
-                    outputs, targets, target_lengths
-                )
-                total_val_word_errors += val_word_errors
-                total_val_ref_words += val_ref_words
-
                 outputs = outputs.permute(2, 0, 1).log_softmax(dim=2)
 
                 adjusted_lengths = ((input_lengths - 1) // 2) + 1
@@ -305,6 +300,13 @@ def train_model(B=5, R=5, num_epochs=10, warmup_epochs=5, lr=0.04, checkpoint_di
 
                 val_batch_number = val_batch_idx + 1
                 if val_batch_number % log_interval == 0 or val_batch_number == len(val_loader):
+                    wer_logits = outputs.detach().permute(1, 2, 0)  # (B, C, T)
+                    val_word_errors, val_ref_words = _batch_word_errors_and_count(
+                        wer_logits, targets, target_lengths
+                    )
+                    total_val_word_errors += val_word_errors
+                    total_val_ref_words += val_ref_words
+
                     running_val_avg_loss = total_val_loss / (val_batch_idx + 1)
                     progress = (val_batch_number / len(val_loader)) * 100
                     running_val_wer = (
