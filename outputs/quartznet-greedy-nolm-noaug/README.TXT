@@ -1,0 +1,1 @@
+this will include the base quartznet model with no augmentation trained on the 500 dataset for 50 epochs. 

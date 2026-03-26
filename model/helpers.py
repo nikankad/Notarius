@@ -70,7 +70,7 @@ def collate_fn_speed_perturb(batch):
     return tensors, targets, input_lengths, target_lengths
 
 
-def collate_fn_no_perm(batch):
+def collate_fn(batch):
     waveforms, _, transcripts, *_ = zip(*batch)
 
     # Compute mel features per sample (no raw-audio padding first)
@@ -177,6 +177,64 @@ def log_epoch(csv_path, epoch, train_loss, val_loss, train_wer, val_wer,
             f"{train_wer:.4f}",  f"{val_wer:.4f}",
             pct(train_wer,  prev_train_wer),  pct(val_wer,  prev_val_wer),
         ])
+
+
+def ctc_greedy_decode(token_ids):
+    decoded = []
+    prev = None
+    for token in token_ids:
+        if token != blank and token != prev:
+            decoded.append(idx2char[token])
+        prev = token
+    return "".join(decoded)
+
+
+def word_edit_distance(ref_words, hyp_words):
+    rows = len(ref_words) + 1
+    cols = len(hyp_words) + 1
+    dp = [[0] * cols for _ in range(rows)]
+
+    for i in range(rows):
+        dp[i][0] = i
+    for j in range(cols):
+        dp[0][j] = j
+
+    for i in range(1, rows):
+        for j in range(1, cols):
+            if ref_words[i - 1] == hyp_words[j - 1]:
+                dp[i][j] = dp[i - 1][j - 1]
+            else:
+                dp[i][j] = 1 + min(
+                    dp[i - 1][j],
+                    dp[i][j - 1],
+                    dp[i - 1][j - 1],
+                )
+
+    return dp[-1][-1]
+
+
+def batch_word_errors_and_count(logits, targets, target_lengths):
+    pred_ids = logits.argmax(dim=1).detach().cpu()
+    targets_cpu = targets.detach().cpu()
+    target_lengths_cpu = target_lengths.detach().cpu()
+
+    total_word_errors = 0
+    total_ref_words = 0
+
+    for i in range(pred_ids.size(0)):
+        pred_text = ctc_greedy_decode(pred_ids[i].tolist())
+
+        target_len = int(target_lengths_cpu[i].item())
+        target_tokens = targets_cpu[i, :target_len].tolist()
+        ref_text = "".join(idx2char[token] for token in target_tokens)
+
+        ref_words = ref_text.split()
+        hyp_words = pred_text.split()
+
+        total_word_errors += word_edit_distance(ref_words, hyp_words)
+        total_ref_words += len(ref_words)
+
+    return total_word_errors, total_ref_words
 
 
 def collate_fn_test(batch):

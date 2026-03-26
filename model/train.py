@@ -1,16 +1,14 @@
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
-import csv
 import torch.nn as nn
 import torch
 import time
 from pathlib import Path
 from torchaudio.datasets import LIBRISPEECH
-from helpers import collate_fn_speed_perturb, collate_fn_test, blank, idx2char, get_dataset_lengths, BucketBatchSampler, log_epoch, collate_fn_no_perm
+from helpers import collate_fn_test, get_dataset_lengths, BucketBatchSampler, log_epoch, collate_fn, batch_word_errors_and_count
 from model import Notarius, QuartzNet
-# from dataset import LocalLibriSpeechDataset
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader
 from torch_optimizer import NovoGrad
 from dotenv import load_dotenv
 
@@ -21,7 +19,7 @@ load_dotenv()
 root = str(os.getenv("ROOT"))
 # settings
 
-train_ds = LIBRISPEECH(root=root, url="train-clean-100", download=False)
+train_ds = LIBRISPEECH(root=root, url="train-clean-500", download=False)
 val_ds = LIBRISPEECH(root=root, url="dev-clean", download=False)
 test_ds = LIBRISPEECH(root=root, url="test-clean", download=False)
 
@@ -35,7 +33,7 @@ train_sampler = BucketBatchSampler(get_dataset_lengths(train_ds), batch_size=160
 val_sampler   = BucketBatchSampler(get_dataset_lengths(val_ds),   batch_size=160, shuffle=False)
 test_sampler  = BucketBatchSampler(get_dataset_lengths(test_ds),  batch_size=160, shuffle=False)
 
-train_loader = DataLoader(train_ds, batch_sampler=train_sampler, collate_fn=collate_fn_no_perm,
+train_loader = DataLoader(train_ds, batch_sampler=train_sampler, collate_fn=collate_fn,
                           num_workers=16, pin_memory=True, persistent_workers=True, prefetch_factor=4)
 val_loader = DataLoader(val_ds,   batch_sampler=val_sampler,
                         collate_fn=collate_fn_test, num_workers=16, persistent_workers=True, pin_memory=True)
@@ -64,64 +62,6 @@ def _save_checkpoint(path: Path, payload: dict):
     path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(payload, path)
 
-
-def _ctc_greedy_decode(token_ids):
-    decoded = []
-    prev = None
-    for token in token_ids:
-        if token != blank and token != prev:
-            decoded.append(idx2char[token])
-        prev = token
-    return "".join(decoded)
-
-
-def _word_edit_distance(ref_words, hyp_words):
-    rows = len(ref_words) + 1
-    cols = len(hyp_words) + 1
-    dp = [[0] * cols for _ in range(rows)]
-
-    for i in range(rows):
-        dp[i][0] = i
-    for j in range(cols):
-        dp[0][j] = j
-
-    for i in range(1, rows):
-        for j in range(1, cols):
-            if ref_words[i - 1] == hyp_words[j - 1]:
-                dp[i][j] = dp[i - 1][j - 1]
-            else:
-                dp[i][j] = 1 + min(
-                    dp[i - 1][j],
-                    dp[i][j - 1],
-                    dp[i - 1][j - 1],
-                )
-
-    return dp[-1][-1]
-
-
-def _batch_word_errors_and_count(logits, targets, target_lengths):
-    # logits: (batch, classes, time)
-    pred_ids = logits.argmax(dim=1).detach().cpu()
-    targets_cpu = targets.detach().cpu()
-    target_lengths_cpu = target_lengths.detach().cpu()
-
-    total_word_errors = 0
-    total_ref_words = 0
-
-    for i in range(pred_ids.size(0)):
-        pred_text = _ctc_greedy_decode(pred_ids[i].tolist())
-
-        target_len = int(target_lengths_cpu[i].item())
-        target_tokens = targets_cpu[i, :target_len].tolist()
-        ref_text = "".join(idx2char[token] for token in target_tokens)
-
-        ref_words = ref_text.split()
-        hyp_words = pred_text.split()
-
-        total_word_errors += _word_edit_distance(ref_words, hyp_words)
-        total_ref_words += len(ref_words)
-
-    return total_word_errors, total_ref_words
 
 
 def _build_inference_payload(model, B: int, R: int, epoch: int, best_val_loss: float):
@@ -256,7 +196,7 @@ def train_model(B=5, R=5, num_epochs=10, warmup_epochs=5, lr=0.04, checkpoint_di
             batch_number = batch_idx + 1
             if batch_number % log_interval == 0 or batch_number == len(train_loader):
                 wer_logits = outputs.detach().permute(1, 2, 0)  # (B, C, T)
-                train_word_errors, train_ref_words = _batch_word_errors_and_count(
+                train_word_errors, train_ref_words = batch_word_errors_and_count(
                     wer_logits, targets, target_lengths
                 )
                 total_train_word_errors += train_word_errors
@@ -315,7 +255,7 @@ def train_model(B=5, R=5, num_epochs=10, warmup_epochs=5, lr=0.04, checkpoint_di
                 val_batch_number = val_batch_idx + 1
                 if val_batch_number % log_interval == 0 or val_batch_number == len(val_loader):
                     wer_logits = outputs.detach().permute(1, 2, 0)  # (B, C, T)
-                    val_word_errors, val_ref_words = _batch_word_errors_and_count(
+                    val_word_errors, val_ref_words = batch_word_errors_and_count(
                         wer_logits, targets, target_lengths
                     )
                     total_val_word_errors += val_word_errors

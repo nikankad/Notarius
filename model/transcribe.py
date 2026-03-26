@@ -4,19 +4,9 @@ from pathlib import Path
 import torch
 import torchaudio
 
-from helpers import blank, idx2char, spec_transform
-from model import QuartzNetBxR
+from helpers import spec_transform, ctc_greedy_decode
+from model import Notarius as QuartzNetBxR
 from model_old import QuartzNetBxR as OldQuartzNetBxR
-
-
-def _ctc_greedy_decode(token_ids):
-    decoded = []
-    prev = None
-    for token in token_ids:
-        if token != blank and token != prev:
-            decoded.append(idx2char[token])
-        prev = token
-    return "".join(decoded)
 
 
 def _load_model(checkpoint_path: Path, device: torch.device):
@@ -72,7 +62,7 @@ def transcribe_audio(audio_path: Path, checkpoint_path: Path, device: str = "aut
         outputs = model(inputs)
         token_ids = outputs.argmax(dim=1).squeeze(0).tolist()
 
-    return _ctc_greedy_decode(token_ids)
+    return ctc_greedy_decode(token_ids)
 
 
 def main():
