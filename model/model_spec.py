@@ -1,7 +1,6 @@
 """Writes a human-readable training config / model spec to the checkpoint directory."""
 
 import datetime
-import torch
 import torch.nn as nn
 from pathlib import Path
 
@@ -22,8 +21,6 @@ def write_training_config(
     checkpoint_dir: Path,
     *,
     R: int,
-    expand: int,
-    C: int,
     n_mels: int,
     n_classes: int,
     num_epochs: int,
@@ -44,15 +41,13 @@ def write_training_config(
 
     lines = [
         "=" * 70,
-        "  NOTARIUS TRAINING CONFIG",
+        "  QUARTZNET TRAINING CONFIG",
         f"  Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         "=" * 70,
         "",
         "[ Model ]",
-        f"  Architecture  : Notarius (Inverted Bottleneck ASR)",
+        f"  Architecture  : QuartzNet (Depthwise-Separable ASR)",
         f"  R             : {R}",
-        f"  expand        : {expand}",
-        f"  C             : {C}  (C2={C*2}, C3={C*4})",
         f"  n_mels        : {n_mels}",
         f"  n_classes     : {n_classes}",
         f"  Total params  : {total_params:,}",

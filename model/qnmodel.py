@@ -6,8 +6,8 @@ class TSCConv(nn.Module):
         super().__init__()
         padding = (kernel_size - 1) // 2
         layers = [
-            nn.Conv1d(in_channel, in_channel, kernel_size, stride, padding, groups=in_channel),
-            nn.Conv1d(in_channel, out_channel, kernel_size=1),
+            nn.Conv1d(in_channel, in_channel, kernel_size, stride, padding, groups=in_channel, bias=False),
+            nn.Conv1d(in_channel, out_channel, kernel_size=1, bias=False),
             nn.BatchNorm1d(out_channel),
         ]
         if relu:
@@ -28,7 +28,7 @@ class QuartNetBlock(nn.Module):
         )
         #residual 
         self.residual = nn.Sequential(
-            nn.Conv1d(in_channel, out_channel, kernel_size=1),
+            nn.Conv1d(in_channel, out_channel, kernel_size=1, bias=False),
             nn.BatchNorm1d(out_channel)
         )
     def forward(self, x):
@@ -39,7 +39,7 @@ class QuartzNetBxR(nn.Module):
         super().__init__()
         self.net = nn.Sequential(
             #c1
-            nn.Conv1d(n_mels, 256, kernel_size=33, stride=2, padding=16),
+            nn.Conv1d(n_mels, 256, kernel_size=33, stride=2, padding=16, bias=False),
             nn.BatchNorm1d(256),
             nn.ReLU(),
             #B1-5
@@ -56,7 +56,7 @@ class QuartzNetBxR(nn.Module):
             #C2
             TSCConv(512, 512, kernel_size=87),
             #C3
-            nn.Conv1d(512, 1024, kernel_size=1),
+            nn.Conv1d(512, 1024, kernel_size=1, bias=False),
             nn.BatchNorm1d(1024),
             nn.ReLU(),
             #C4

@@ -151,6 +151,80 @@ class BucketBatchSampler(Sampler):
         return (self._total + self.batch_size - 1) // self.batch_size
 
 
+class DistributedBucketBatchSampler(Sampler):
+    """Shard bucketed batches across distributed workers."""
+
+    def __init__(
+        self,
+        lengths,
+        batch_size,
+        num_replicas,
+        rank,
+        shuffle=True,
+        num_buckets=200,
+        drop_last=False,
+        seed=42,
+    ):
+        if num_replicas < 1:
+            raise ValueError("num_replicas must be >= 1")
+        if rank < 0 or rank >= num_replicas:
+            raise ValueError("rank must be in [0, num_replicas)")
+
+        self.batch_size = batch_size
+        self.num_replicas = num_replicas
+        self.rank = rank
+        self.shuffle = shuffle
+        self.num_buckets = num_buckets
+        self.drop_last = drop_last
+        self.seed = seed
+        self.epoch = 0
+        self.sorted_indices = sorted(range(len(lengths)), key=lambda i: lengths[i])
+
+    def set_epoch(self, epoch):
+        self.epoch = epoch
+
+    def _build_batches(self):
+        sorted_indices = list(self.sorted_indices)
+        bucket_size = max(self.batch_size, len(sorted_indices) // self.num_buckets)
+        buckets = [
+            sorted_indices[i:i + bucket_size]
+            for i in range(0, len(sorted_indices), bucket_size)
+        ]
+
+        generator = random.Random(self.seed + self.epoch)
+        batches = []
+        for bucket in buckets:
+            if self.shuffle:
+                generator.shuffle(bucket)
+            for i in range(0, len(bucket), self.batch_size):
+                batch = bucket[i:i + self.batch_size]
+                if len(batch) == self.batch_size or not self.drop_last:
+                    batches.append(batch)
+
+        if self.shuffle:
+            generator.shuffle(batches)
+        return batches
+
+    def __iter__(self):
+        batches = self._build_batches()
+        if self.drop_last:
+            total_size = (len(batches) // self.num_replicas) * self.num_replicas
+            batches = batches[:total_size]
+        elif batches:
+            remainder = len(batches) % self.num_replicas
+            if remainder != 0:
+                batches.extend(batches[: self.num_replicas - remainder])
+
+        for batch in batches[self.rank::self.num_replicas]:
+            yield batch
+
+    def __len__(self):
+        batches = len(self._build_batches())
+        if self.drop_last:
+            return batches // self.num_replicas
+        return (batches + self.num_replicas - 1) // self.num_replicas
+
+
 def log_epoch(csv_path, epoch, train_loss, val_loss, train_wer, val_wer,
               prev_train_loss=None, prev_val_loss=None, prev_train_wer=None, prev_val_wer=None):
     def pct(current, previous):
