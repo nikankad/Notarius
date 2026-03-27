@@ -9,7 +9,8 @@ from pathlib import Path
 from torchaudio.datasets import LIBRISPEECH
 from helpers import collate_fn_test, get_dataset_lengths, BucketBatchSampler, log_epoch, collate_fn, batch_word_errors_and_count
 from model import Notarius
-from model_old import QuartzNetBxR as QuartzNet
+# from .qnmodel import QuartzNetBxR as QuartzNet
+from model_spec import write_training_config
 from torch.utils.data import DataLoader, Subset
 from torch_optimizer import NovoGrad
 from dotenv import load_dotenv
@@ -68,10 +69,11 @@ def _save_checkpoint(path: Path, payload: dict):
 
 
 
-def _build_inference_payload(model, B: int, R: int, epoch: int, best_val_loss: float):
+def _build_inference_payload(model, B: int, R: int, epoch: int, best_val_loss: float, best_val_wer: float):
     return {
         "epoch": epoch,
         "best_val_loss": best_val_loss,
+        "best_val_wer": best_val_wer,
         "model_state_dict": model.state_dict(),
         "config": {
             "B": B,
@@ -95,7 +97,7 @@ def train_model(B=5, R=5, num_epochs=10, warmup_epochs=5, lr=0.04, checkpoint_di
     print(
         f"Starting training for {num_epochs} epochs with QuartzNet B={B}, R={R}")
 
-    model = QuartzNet(n_mels=64, n_classes=29, B=B, R=R).to(device)
+    model = Notarius(n_mels=64, n_classes=29, R=R).to(device)
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Model parameters: {total_params:,}")
     model = torch.compile(model)
@@ -123,6 +125,25 @@ def train_model(B=5, R=5, num_epochs=10, warmup_epochs=5, lr=0.04, checkpoint_di
     checkpoint_dir_path = _resolve_checkpoint_dir(checkpoint_dir)
     checkpoint_dir_path.mkdir(parents=True, exist_ok=True)
     print(f"Checkpoints will be saved to: {checkpoint_dir_path}")
+
+    write_training_config(
+        model=model,
+        checkpoint_dir=checkpoint_dir_path,
+        R=R,
+        expand=2,
+        C=192,
+        n_mels=64,
+        n_classes=29,
+        num_epochs=num_epochs,
+        warmup_epochs=warmup_epochs,
+        lr=lr,
+        batch_size=180,
+        optimizer_name="NovoGrad(betas=(0.95,0.5), wd=0.001)",
+        train_size=len(train_ds),
+        val_size=len(val_ds),
+        test_size=len(test_ds),
+        device=str(device),
+    )
 
     start_epoch = 0
     best_val_loss = float("inf")
@@ -344,6 +365,7 @@ def train_model(B=5, R=5, num_epochs=10, warmup_epochs=5, lr=0.04, checkpoint_di
                 R=R,
                 epoch=epoch,
                 best_val_loss=best_val_loss,
+                best_val_wer=best_val_wer,
             )
             _save_checkpoint(best_ckpt_path, best_payload)
             print(f"New best checkpoint (val WER: {avg_val_wer:.2f}%): {best_ckpt_path}")
@@ -362,6 +384,7 @@ def train_model(B=5, R=5, num_epochs=10, warmup_epochs=5, lr=0.04, checkpoint_di
         R=R,
         epoch=num_epochs - 1,
         best_val_loss=best_val_loss,
+        best_val_wer=best_val_wer,
     )
     torch.save(final_payload, final_model_path)
     print(f"Saved final model weights: {final_model_path}")
@@ -375,7 +398,7 @@ if __name__ == "__main__":
     parser.add_argument("--resume",      default=None,                        help="Checkpoint to resume from")
     parser.add_argument("--epochs",      type=int,   default=50)
     parser.add_argument("--B",           type=int,   default=5)
-    parser.add_argument("--R",           type=int,   default=5)
+    parser.add_argument("--R",           type=int,   default=3)
     parser.add_argument("--lr",          type=float, default=0.005)
     parser.add_argument("--warmup",      type=int,   default=2)
     parser.add_argument("--checkpoint-dir", default="outputs/checkpoints")

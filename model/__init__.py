@@ -1,4 +1,4 @@
-__all__ = ["Notarius", "QuartzNet"]
+__all__ = ["model", "qnmodel"]
 
 from .model import Notarius
-from .model_old import QuartzNetBxR as QuartzNet
+from .qnmodel import QuartzNetBxR as QuartzNet
