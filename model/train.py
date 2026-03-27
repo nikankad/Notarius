@@ -29,9 +29,9 @@ train_ds = Subset(train_ds, range(2 * len(train_ds) // 5))
 # initialize dataloader
 print("Pre-computing dataset lengths for bucket batching...")
 _train_lengths = get_dataset_lengths(train_ds.dataset)
-train_sampler = BucketBatchSampler([_train_lengths[i] for i in train_ds.indices], batch_size=256, shuffle=True)
-val_sampler   = BucketBatchSampler(get_dataset_lengths(val_ds),   batch_size=256, shuffle=False)
-test_sampler  = BucketBatchSampler(get_dataset_lengths(test_ds),  batch_size=256, shuffle=False)
+train_sampler = BucketBatchSampler([_train_lengths[i] for i in train_ds.indices], batch_size=128, shuffle=True)
+val_sampler   = BucketBatchSampler(get_dataset_lengths(val_ds),   batch_size=128 , shuffle=False)
+test_sampler  = BucketBatchSampler(get_dataset_lengths(test_ds),  batch_size=128 , shuffle=False)
 
 train_loader = DataLoader(train_ds, batch_sampler=train_sampler, collate_fn=collate_fn,
                           num_workers=16, pin_memory=True, persistent_workers=True, prefetch_factor=4)
@@ -111,7 +111,7 @@ def train_model(B=5, R=5, num_epochs=10, warmup_epochs=5, lr=0.04, checkpoint_di
         optimizer, start_factor=0.01, end_factor=1.0, total_iters=warmup_steps
     )
     cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=max(1, cosine_steps), eta_min=1e-3
+        optimizer, T_max=max(1, cosine_steps), eta_min=1e-4
     )
     scheduler = torch.optim.lr_scheduler.SequentialLR(
         optimizer, schedulers=[warmup_scheduler, cosine_scheduler], milestones=[warmup_steps]
@@ -180,11 +180,11 @@ def train_model(B=5, R=5, num_epochs=10, warmup_epochs=5, lr=0.04, checkpoint_di
 
             with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                 outputs = model(inputs)
-                outputs = outputs.permute(2, 0, 1).log_softmax(dim=2)
 
-                adjusted_lengths = ((input_lengths - 1) // 2) + 1
-                loss = criterion(outputs, targets,
-                                 adjusted_lengths, target_lengths)
+            outputs = outputs.float().permute(2, 0, 1).log_softmax(dim=2)
+            adjusted_lengths = ((input_lengths - 1) // 2) + 1
+            loss = criterion(outputs, targets,
+                             adjusted_lengths, target_lengths)
 
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -373,7 +373,7 @@ if __name__ == "__main__":
     parser.add_argument("--epochs",      type=int,   default=50)
     parser.add_argument("--B",           type=int,   default=5)
     parser.add_argument("--R",           type=int,   default=5)
-    parser.add_argument("--lr",          type=float, default=0.05)
+    parser.add_argument("--lr",          type=float, default=0.005)
     parser.add_argument("--warmup",      type=int,   default=2)
     parser.add_argument("--checkpoint-dir", default="outputs/checkpoints")
     parser.add_argument("--log-csv",     default="outputs/training_log.csv")
