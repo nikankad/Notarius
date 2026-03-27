@@ -1,3 +1,4 @@
+import datetime
 import os
 import random
 import time
@@ -20,13 +21,20 @@ from helpers import (
     collate_fn_test,
     get_dataset_lengths,
     log_epoch,
+    collate_fn_cutout
 )
 from model import Notarius
-from qnmodel import QuartzNetBxR
 from model_spec import write_training_config
 
 load_dotenv()
 root = os.getenv("ROOT")
+
+
+def _generate_run_id(aug_label: str = "") -> str:
+    slurm_id = os.environ.get("SLURM_JOB_ID")
+    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    suffix = f"-{aug_label}" if aug_label else ""
+    return f"notarius{suffix}-{slurm_id}" if slurm_id else f"notarius{suffix}-{ts}"
 
 
 def _env_int(name: str, default: int) -> int:
@@ -114,7 +122,7 @@ def _loader_kwargs(num_workers: int) -> dict:
     return kwargs
 
 
-def _build_dataloaders(train_ds, val_ds, test_ds, batch_size: int, num_workers: int, rank: int, world_size: int):
+def _build_dataloaders(train_ds, val_ds, test_ds, batch_size, num_workers, rank, world_size):
     if _is_main_process(rank):
         print("Pre-computing dataset lengths for bucket batching...")
         train_lengths_all = get_dataset_lengths(train_ds.dataset)
@@ -170,15 +178,17 @@ def _build_dataloaders(train_ds, val_ds, test_ds, batch_size: int, num_workers: 
     return train_loader, val_loader, test_loader, per_device_batch_size
 
 
-def _build_inference_payload(model, B: int, R: int, epoch: int, best_val_loss: float, best_val_wer: float):
+def _build_inference_payload(model, R, C, expand, epoch, best_val_loss, best_val_wer, run_id=None):
     return {
+        "run_id": run_id,
         "epoch": epoch,
         "best_val_loss": best_val_loss,
         "best_val_wer": best_val_wer,
         "model_state_dict": model.state_dict(),
         "config": {
-            "B": B,
             "R": R,
+            "C": C,
+            "expand": expand,
             "n_mels": 64,
             "n_classes": 29,
         },
@@ -197,21 +207,29 @@ def _reduce_train_metrics(total_loss, total_word_errors, total_ref_words, num_ba
 
 
 def train_model(
-    B=5,
-    R=5,
-    num_epochs=10,
-    warmup_epochs=5,
-    lr=0.04,
-    checkpoint_dir="outputs/checkpoints",
+    R=3,
+    C=192,
+    expand=2,
+    num_epochs=50,
+    warmup_epochs=2,
+    lr=0.005,
+    output_base="outputs/notarius",
     save_every=10,
     resume_from=None,
-    log_csv="outputs/training_log.csv",
     batch_size=180,
     num_workers=16,
     compile_model=True,
+    run_id=None,
+    augmentation=None,
 ):
     rank, local_rank, world_size, device = _setup_distributed()
     is_main = _is_main_process(rank)
+
+    if run_id is None:
+        run_id = _generate_run_id()
+
+    run_dir = _resolve_checkpoint_dir(output_base) / run_id
+    log_csv = str(run_dir / "training_log.csv")
 
     try:
         train_ds, val_ds, test_ds = _build_datasets()
@@ -220,22 +238,15 @@ def train_model(
         )
 
         if is_main:
+            print(f"Run ID: {run_id}")
             print(f"Using device: {device}")
             print(f"Distributed training | enabled: {world_size > 1} | world_size: {world_size}")
-            print(
-                f"Dataset sizes | train: {len(train_ds)} | val: {len(val_ds)} | test: {len(test_ds)}"
-            )
-            print(
-                f"Dataloader batches | train: {len(train_loader)} | val: {len(val_loader)} | test: {len(test_loader)}"
-            )
+            print(f"Dataset sizes | train: {len(train_ds)} | val: {len(val_ds)} | test: {len(test_ds)}")
+            print(f"Dataloader batches | train: {len(train_loader)} | val: {len(val_loader)} | test: {len(test_loader)}")
             print(f"Batch sizes | global target: {batch_size} | per GPU: {per_device_batch_size}")
-            print(f"Starting training for {num_epochs} epochs with QuartzNet B={B}, R={R}")
-            if world_size > 1 and batch_size % world_size != 0:
-                print(
-                    "Batch size is not divisible by world size; using floor division per GPU."
-                )
+            print(f"Starting training for {num_epochs} epochs with Notarius R={R}, C={C}, expand={expand}")
 
-        base_model = QuartzNetBxR(n_mels=64, n_classes=29, R=R).to(device)
+        base_model = Notarius(n_mels=64, n_classes=29, R=R, expand=expand, C=C).to(device)
         total_params = sum(p.numel() for p in base_model.parameters())
         if is_main:
             print(f"Model parameters: {total_params:,}")
@@ -262,11 +273,6 @@ def train_model(
         warmup_steps = warmup_epochs * steps_per_epoch
         cosine_steps = total_steps - warmup_steps
 
-        if is_main:
-            print(
-                f"Learning rate schedule | warmup_steps: {warmup_steps} | cosine_steps: {cosine_steps}"
-            )
-
         warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
             optimizer, start_factor=0.01, end_factor=1.0, total_iters=warmup_steps
         )
@@ -277,13 +283,12 @@ def train_model(
             optimizer, schedulers=[warmup_scheduler, cosine_scheduler], milestones=[warmup_steps]
         )
 
-        checkpoint_dir_path = _resolve_checkpoint_dir(checkpoint_dir)
-        checkpoint_dir_path.mkdir(parents=True, exist_ok=True)
+        run_dir.mkdir(parents=True, exist_ok=True)
         if is_main:
-            print(f"Checkpoints will be saved to: {checkpoint_dir_path}")
+            print(f"Output directory: {run_dir}")
             write_training_config(
                 model=base_model,
-                checkpoint_dir=checkpoint_dir_path,
+                checkpoint_dir=run_dir,
                 R=R,
                 n_mels=64,
                 n_classes=29,
@@ -301,7 +306,6 @@ def train_model(
         start_epoch = 0
         best_val_loss = float("inf")
         best_val_wer = float("inf")
-
         train_losses = []
         val_losses = []
         train_wers = []
@@ -311,8 +315,8 @@ def train_model(
         if resume_from:
             resume_path = Path(resume_from)
             if not resume_path.is_absolute():
-                resume_path = checkpoint_dir_path / resume_path
-            checkpoint = torch.load(resume_path, map_location=device)
+                resume_path = run_dir / resume_path
+            checkpoint = torch.load(resume_path, map_location=device, weights_only=False)
             base_model.load_state_dict(checkpoint["model_state_dict"])
             optimizer_state = checkpoint.get("optimizer_state_dict")
             if optimizer_state is not None:
@@ -353,9 +357,7 @@ def train_model(
 
             for batch_idx, (inputs, targets, input_lengths, target_lengths) in enumerate(train_loader):
                 if is_main and batch_idx == 0:
-                    print(
-                        f"First batch shapes | inputs: {tuple(inputs.shape)} | targets: {tuple(targets.shape)}"
-                    )
+                    print(f"First batch shapes | inputs: {tuple(inputs.shape)} | targets: {tuple(targets.shape)}")
 
                 inputs = inputs.to(device, non_blocking=True)
                 targets = targets.to(device, non_blocking=True)
@@ -364,11 +366,7 @@ def train_model(
 
                 optimizer.zero_grad(set_to_none=True)
 
-                with torch.autocast(
-                    device_type=device.type,
-                    dtype=torch.bfloat16,
-                    enabled=autocast_enabled,
-                ):
+                with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=autocast_enabled):
                     outputs = train_model_ref(inputs)
 
                 outputs = outputs.float().permute(2, 0, 1).log_softmax(dim=2)
@@ -382,9 +380,7 @@ def train_model(
 
                 total_train_loss += loss.item()
                 wer_logits = outputs.detach().permute(1, 2, 0)
-                batch_word_errors, batch_ref_words = batch_word_errors_and_count(
-                    wer_logits, targets, target_lengths
-                )
+                batch_word_errors, batch_ref_words = batch_word_errors_and_count(wer_logits, targets, target_lengths)
                 total_train_word_errors += batch_word_errors
                 total_train_ref_words += batch_ref_words
 
@@ -395,9 +391,7 @@ def train_model(
                     avg_batch_time = elapsed / batch_number
                     eta_seconds = avg_batch_time * (len(train_loader) - batch_number)
                     progress = (batch_number / len(train_loader)) * 100
-                    running_train_wer = (
-                        total_train_word_errors / max(1, total_train_ref_words)
-                    ) * 100
+                    running_train_wer = (total_train_word_errors / max(1, total_train_ref_words)) * 100
                     print(
                         f"Epoch {epoch+1}/{num_epochs} | "
                         f"Train {batch_number:>4}/{len(train_loader)} ({progress:5.1f}%) | "
@@ -407,13 +401,7 @@ def train_model(
                     )
 
             reduced_train_loss, reduced_train_word_errors, reduced_train_ref_words, reduced_batches = (
-                _reduce_train_metrics(
-                    total_train_loss,
-                    total_train_word_errors,
-                    total_train_ref_words,
-                    len(train_loader),
-                    device,
-                )
+                _reduce_train_metrics(total_train_loss, total_train_word_errors, total_train_ref_words, len(train_loader), device)
             )
             avg_train_loss = reduced_train_loss / max(1.0, reduced_batches)
             avg_train_wer = (reduced_train_word_errors / max(1.0, reduced_train_ref_words)) * 100
@@ -444,11 +432,7 @@ def train_model(
                         input_lengths = input_lengths.to(device, non_blocking=True)
                         target_lengths = target_lengths.to(device, non_blocking=True)
 
-                        with torch.autocast(
-                            device_type=device.type,
-                            dtype=torch.bfloat16,
-                            enabled=autocast_enabled,
-                        ):
+                        with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=autocast_enabled):
                             outputs = base_model(inputs)
 
                         outputs = outputs.float().permute(2, 0, 1).log_softmax(dim=2)
@@ -457,9 +441,7 @@ def train_model(
                         total_val_loss += val_loss.item()
 
                         wer_logits = outputs.detach().permute(1, 2, 0)
-                        val_word_errors, val_ref_words = batch_word_errors_and_count(
-                            wer_logits, targets, target_lengths
-                        )
+                        val_word_errors, val_ref_words = batch_word_errors_and_count(wer_logits, targets, target_lengths)
                         total_val_word_errors += val_word_errors
                         total_val_ref_words += val_ref_words
 
@@ -467,9 +449,7 @@ def train_model(
                         if val_batch_number % log_interval == 0 or val_batch_number == len(val_loader):
                             running_val_avg_loss = total_val_loss / val_batch_number
                             progress = (val_batch_number / len(val_loader)) * 100
-                            running_val_wer = (
-                                total_val_word_errors / max(1, total_val_ref_words)
-                            ) * 100
+                            running_val_wer = (total_val_word_errors / max(1, total_val_ref_words)) * 100
                             print(
                                 f"Epoch {epoch+1}/{num_epochs} | "
                                 f"Val   {val_batch_number:>4}/{len(val_loader)} ({progress:5.1f}%) | "
@@ -507,6 +487,7 @@ def train_model(
                     prev_val_loss=val_losses[-2] if len(val_losses) > 1 else None,
                     prev_train_wer=train_wers[-2] if len(train_wers) > 1 else None,
                     prev_val_wer=val_wers[-2] if len(val_wers) > 1 else None,
+                    run_id=run_id,
                 )
 
                 if avg_val_loss < best_val_loss:
@@ -515,6 +496,7 @@ def train_model(
                     best_val_wer = avg_val_wer
 
                 checkpoint_payload = {
+                    "run_id": run_id,
                     "epoch": epoch,
                     "model_state_dict": base_model.state_dict(),
                     "optimizer_state_dict": optimizer.state_dict(),
@@ -526,32 +508,27 @@ def train_model(
                     "best_val_loss": best_val_loss,
                     "best_val_wer": best_val_wer,
                     "config": {
-                        "B": B,
                         "R": R,
+                        "C": C,
+                        "expand": expand,
                         "n_mels": 64,
                         "n_classes": 29,
                     },
                 }
 
-                last_ckpt_path = checkpoint_dir_path / "last.pt"
+                last_ckpt_path = run_dir / "last.pt"
                 _save_checkpoint(last_ckpt_path, checkpoint_payload)
                 print(f"Saved last checkpoint: {last_ckpt_path}")
 
                 if avg_val_wer <= best_val_wer:
-                    best_ckpt_path = checkpoint_dir_path / "best.pt"
-                    best_payload = _build_inference_payload(
-                        model=base_model,
-                        B=B,
-                        R=R,
-                        epoch=epoch,
-                        best_val_loss=best_val_loss,
-                        best_val_wer=best_val_wer,
-                    )
-                    _save_checkpoint(best_ckpt_path, best_payload)
+                    best_ckpt_path = run_dir / "best.pt"
+                    _save_checkpoint(best_ckpt_path, _build_inference_payload(
+                        base_model, R, C, expand, epoch, best_val_loss, best_val_wer, run_id
+                    ))
                     print(f"New best checkpoint (val WER: {avg_val_wer:.2f}%): {best_ckpt_path}")
 
                 if save_every > 0 and ((epoch + 1) % save_every == 0):
-                    epoch_ckpt_path = checkpoint_dir_path / f"epoch_{epoch + 1:03d}.pt"
+                    epoch_ckpt_path = run_dir / f"epoch_{epoch + 1:03d}.pt"
                     _save_checkpoint(epoch_ckpt_path, checkpoint_payload)
                     print(f"Saved periodic checkpoint: {epoch_ckpt_path}")
 
@@ -560,16 +537,8 @@ def train_model(
             _barrier()
 
         if is_main:
-            final_model_path = checkpoint_dir_path / "final_model.pt"
-            final_payload = _build_inference_payload(
-                model=base_model,
-                B=B,
-                R=R,
-                epoch=num_epochs - 1,
-                best_val_loss=best_val_loss,
-                best_val_wer=best_val_wer,
-            )
-            torch.save(final_payload, final_model_path)
+            final_model_path = run_dir / "final_model.pt"
+            torch.save(_build_inference_payload(base_model, R, C, expand, num_epochs - 1, best_val_loss, best_val_wer, run_id), final_model_path)
             print(f"Saved final model weights: {final_model_path}")
 
         return base_model, train_losses, val_losses
@@ -581,18 +550,21 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--resume", default=None, help="Checkpoint to resume from")
+    parser.add_argument("--resume", default=None)
     parser.add_argument("--epochs", type=int, default=50)
-    parser.add_argument("--B", type=int, default=5)
     parser.add_argument("--R", type=int, default=3)
+    parser.add_argument("--C", type=int, default=192, help="Base channel width (192=8.2M, 172=6.7M, 256=14.1M)")
+    parser.add_argument("--expand", type=int, default=2, help="Inverted bottleneck expansion factor")
     parser.add_argument("--lr", type=float, default=0.005)
     parser.add_argument("--warmup", type=int, default=2)
-    parser.add_argument("--batch-size", type=int, default=180, help="Global batch target across all GPUs")
+    parser.add_argument("--batch-size", type=int, default=180)
     parser.add_argument("--num-workers", type=int, default=16)
     parser.add_argument("--save-every", type=int, default=10)
-    parser.add_argument("--checkpoint-dir", default="outputs/checkpoints")
-    parser.add_argument("--log-csv", default="outputs/training_log.csv")
+    parser.add_argument("--output-dir", default="outputs/notarius", help="Base output dir; run saved to <output-dir>/<run-id>/")
     parser.add_argument("--no-compile", action="store_true")
+    parser.add_argument("--log-aug-speed", action="store_true", help="Label this run as using speed perturbation (config/checkpoint only)")
+    parser.add_argument("--log-aug-specaugment", action="store_true", help="Label this run as using SpecAugment (config/checkpoint only)")
+    parser.add_argument("--log-aug-speccutout", action="store_true", help="Label this run as using SpecCutout (config/checkpoint only)")
     args = parser.parse_args()
 
     errors = []
@@ -602,25 +574,21 @@ if __name__ == "__main__":
 
     if args.resume is not None:
         resume_path = Path(args.resume)
-        if not resume_path.is_absolute():
-            resume_path = _resolve_checkpoint_dir(args.checkpoint_dir) / resume_path
-        if not resume_path.exists():
+        if not resume_path.is_absolute() and not resume_path.exists():
             errors.append(f"--resume: file not found: {resume_path}")
 
-    log_csv_path = Path(args.log_csv)
-    if log_csv_path.is_dir():
-        errors.append(f"--log-csv: '{log_csv_path}' is a directory, not a file (did you forget to add .csv?)")
-    elif log_csv_path.parent != Path(".") and not log_csv_path.parent.exists():
-        errors.append(f"--log-csv: parent directory does not exist: {log_csv_path.parent}")
-
-    ckpt_dir_path = _resolve_checkpoint_dir(args.checkpoint_dir)
-    if ckpt_dir_path.exists() and not ckpt_dir_path.is_dir():
-        errors.append(f"--checkpoint-dir: '{ckpt_dir_path}' exists but is not a directory")
+    output_base_path = _resolve_checkpoint_dir(args.output_dir)
+    if output_base_path.exists() and not output_base_path.is_dir():
+        errors.append(f"--output-dir: '{output_base_path}' exists but is not a directory")
 
     if args.batch_size < 1:
         errors.append("--batch-size must be >= 1")
     if args.num_workers < 0:
         errors.append("--num-workers must be >= 0")
+    if args.C < 1:
+        errors.append("--C must be >= 1")
+    if args.expand < 1:
+        errors.append("--expand must be >= 1")
 
     if errors:
         for error in errors:
@@ -628,16 +596,26 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     train_model(
-        B=args.B,
         R=args.R,
+        C=args.C,
+        expand=args.expand,
         num_epochs=args.epochs,
         warmup_epochs=args.warmup,
         lr=args.lr,
-        checkpoint_dir=args.checkpoint_dir,
+        output_base=args.output_dir,
         save_every=args.save_every,
         resume_from=args.resume,
-        log_csv=args.log_csv,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         compile_model=not args.no_compile,
+        run_id=_generate_run_id("-".join(filter(None, [
+            "speed" if args.log_aug_speed else "",
+            "specaug" if args.log_aug_specaugment else "",
+            "cutout" if args.log_aug_speccutout else "",
+        ]))),
+        augmentation={
+            "speed_perturb": args.log_aug_speed,
+            "spec_augment": args.log_aug_specaugment,
+            "spec_cutout": args.log_aug_speccutout,
+        },
     )

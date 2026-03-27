@@ -1,11 +1,11 @@
 ======================================================================
   QUARTZNET TRAINING CONFIG
-  Generated: 2026-03-27 15:37:10
+  Generated: 2026-03-27 17:00:16
 ======================================================================
 
 [ Model ]
   Architecture  : QuartzNet (Depthwise-Separable ASR)
-  R             : 3
+  R             : 5
   n_mels        : 64
   n_classes     : 29
   Total params  : 7,235,357
@@ -28,7 +28,7 @@
   Test size     : 2,620
 
 [ Hardware ]
-  Device        : cuda | world_size=1 | per_device_batch_size=180
+  Device        : cuda:0 | world_size=4 | per_device_batch_size=45
 
 [ Architecture ]
   net                                                          Sequential

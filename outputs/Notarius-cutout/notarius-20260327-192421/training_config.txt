@@ -1,0 +1,228 @@
+======================================================================
+  QUARTZNET TRAINING CONFIG
+  Generated: 2026-03-27 19:24:27
+======================================================================
+
+[ Model ]
+  Architecture  : QuartzNet (Depthwise-Separable ASR)
+  R             : 3
+  n_mels        : 64
+  n_classes     : 29
+  Total params  : 8,198,429
+  Trainable     : 8,198,429
+
+[ Training ]
+  Epochs        : 50
+  Warmup epochs : 2
+  Learning rate : 0.005
+  Batch size    : 180
+  Optimizer     : NovoGrad(betas=(0.95,0.5), wd=0.001)
+  LR schedule   : LinearLR warmup → CosineAnnealingLR
+  Loss          : CTCLoss (blank=28, zero_infinity=True)
+  Grad clip     : 1.0
+  Mixed prec.   : bfloat16 (autocast)
+
+[ Dataset ]
+  Train size    : 59,475
+  Val size      : 2,703
+  Test size     : 2,620
+
+[ Hardware ]
+  Device        : cuda | world_size=1 | per_device_batch_size=180
+
+[ Architecture ]
+  net                                                          Sequential
+  net.0                                                        Conv1d  [405,504 params]
+  net.1                                                        BatchNorm1d  [384 params]
+  net.2                                                        ReLU
+  net.3                                                        IBBlock
+  net.3.layer1                                                 IBConv
+  net.3.layer1.net                                             Sequential
+  net.3.layer1.net.0                                           Conv1d  [73,728 params]
+  net.3.layer1.net.1                                           BatchNorm1d  [768 params]
+  net.3.layer1.net.2                                           ReLU
+  net.3.layer1.net.3                                           Conv1d  [12,672 params]
+  net.3.layer1.net.4                                           BatchNorm1d  [768 params]
+  net.3.layer1.net.5                                           ReLU
+  net.3.layer1.net.6                                           Conv1d  [73,728 params]
+  net.3.layer1.net.7                                           BatchNorm1d  [384 params]
+  net.3.layers                                                 ModuleList
+  net.3.layers.0                                               IBConv
+  net.3.layers.0.net                                           Sequential
+  net.3.layers.0.net.0                                         Conv1d  [73,728 params]
+  net.3.layers.0.net.1                                         BatchNorm1d  [768 params]
+  net.3.layers.0.net.2                                         ReLU
+  net.3.layers.0.net.3                                         Conv1d  [12,672 params]
+  net.3.layers.0.net.4                                         BatchNorm1d  [768 params]
+  net.3.layers.0.net.5                                         ReLU
+  net.3.layers.0.net.6                                         Conv1d  [73,728 params]
+  net.3.layers.0.net.7                                         BatchNorm1d  [384 params]
+  net.3.layers.1                                               IBConv
+  net.3.layers.1.net                                           Sequential
+  net.3.layers.1.net.0                                         Conv1d  [73,728 params]
+  net.3.layers.1.net.1                                         BatchNorm1d  [768 params]
+  net.3.layers.1.net.2                                         ReLU
+  net.3.layers.1.net.3                                         Conv1d  [12,672 params]
+  net.3.layers.1.net.4                                         BatchNorm1d  [768 params]
+  net.3.layers.1.net.5                                         ReLU
+  net.3.layers.1.net.6                                         Conv1d  [73,728 params]
+  net.3.layers.1.net.7                                         BatchNorm1d  [384 params]
+  net.3.residual                                               Sequential
+  net.3.residual.0                                             Conv1d  [36,864 params]
+  net.3.residual.1                                             BatchNorm1d  [384 params]
+  net.4                                                        IBBlock
+  net.4.layer1                                                 IBConv
+  net.4.layer1.net                                             Sequential
+  net.4.layer1.net.0                                           Conv1d  [73,728 params]
+  net.4.layer1.net.1                                           BatchNorm1d  [768 params]
+  net.4.layer1.net.2                                           ReLU
+  net.4.layer1.net.3                                           Conv1d  [14,976 params]
+  net.4.layer1.net.4                                           BatchNorm1d  [768 params]
+  net.4.layer1.net.5                                           ReLU
+  net.4.layer1.net.6                                           Conv1d  [73,728 params]
+  net.4.layer1.net.7                                           BatchNorm1d  [384 params]
+  net.4.layers                                                 ModuleList
+  net.4.layers.0                                               IBConv
+  net.4.layers.0.net                                           Sequential
+  net.4.layers.0.net.0                                         Conv1d  [73,728 params]
+  net.4.layers.0.net.1                                         BatchNorm1d  [768 params]
+  net.4.layers.0.net.2                                         ReLU
+  net.4.layers.0.net.3                                         Conv1d  [14,976 params]
+  net.4.layers.0.net.4                                         BatchNorm1d  [768 params]
+  net.4.layers.0.net.5                                         ReLU
+  net.4.layers.0.net.6                                         Conv1d  [73,728 params]
+  net.4.layers.0.net.7                                         BatchNorm1d  [384 params]
+  net.4.layers.1                                               IBConv
+  net.4.layers.1.net                                           Sequential
+  net.4.layers.1.net.0                                         Conv1d  [73,728 params]
+  net.4.layers.1.net.1                                         BatchNorm1d  [768 params]
+  net.4.layers.1.net.2                                         ReLU
+  net.4.layers.1.net.3                                         Conv1d  [14,976 params]
+  net.4.layers.1.net.4                                         BatchNorm1d  [768 params]
+  net.4.layers.1.net.5                                         ReLU
+  net.4.layers.1.net.6                                         Conv1d  [73,728 params]
+  net.4.layers.1.net.7                                         BatchNorm1d  [384 params]
+  net.4.residual                                               Sequential
+  net.4.residual.0                                             Conv1d  [36,864 params]
+  net.4.residual.1                                             BatchNorm1d  [384 params]
+  net.5                                                        IBBlock
+  net.5.layer1                                                 IBConv
+  net.5.layer1.net                                             Sequential
+  net.5.layer1.net.0                                           Conv1d  [73,728 params]
+  net.5.layer1.net.1                                           BatchNorm1d  [768 params]
+  net.5.layer1.net.2                                           ReLU
+  net.5.layer1.net.3                                           Conv1d  [19,584 params]
+  net.5.layer1.net.4                                           BatchNorm1d  [768 params]
+  net.5.layer1.net.5                                           ReLU
+  net.5.layer1.net.6                                           Conv1d  [147,456 params]
+  net.5.layer1.net.7                                           BatchNorm1d  [768 params]
+  net.5.layers                                                 ModuleList
+  net.5.layers.0                                               IBConv
+  net.5.layers.0.net                                           Sequential
+  net.5.layers.0.net.0                                         Conv1d  [294,912 params]
+  net.5.layers.0.net.1                                         BatchNorm1d  [1,536 params]
+  net.5.layers.0.net.2                                         ReLU
+  net.5.layers.0.net.3                                         Conv1d  [39,168 params]
+  net.5.layers.0.net.4                                         BatchNorm1d  [1,536 params]
+  net.5.layers.0.net.5                                         ReLU
+  net.5.layers.0.net.6                                         Conv1d  [294,912 params]
+  net.5.layers.0.net.7                                         BatchNorm1d  [768 params]
+  net.5.layers.1                                               IBConv
+  net.5.layers.1.net                                           Sequential
+  net.5.layers.1.net.0                                         Conv1d  [294,912 params]
+  net.5.layers.1.net.1                                         BatchNorm1d  [1,536 params]
+  net.5.layers.1.net.2                                         ReLU
+  net.5.layers.1.net.3                                         Conv1d  [39,168 params]
+  net.5.layers.1.net.4                                         BatchNorm1d  [1,536 params]
+  net.5.layers.1.net.5                                         ReLU
+  net.5.layers.1.net.6                                         Conv1d  [294,912 params]
+  net.5.layers.1.net.7                                         BatchNorm1d  [768 params]
+  net.5.residual                                               Sequential
+  net.5.residual.0                                             Conv1d  [73,728 params]
+  net.5.residual.1                                             BatchNorm1d  [768 params]
+  net.6                                                        IBBlock
+  net.6.layer1                                                 IBConv
+  net.6.layer1.net                                             Sequential
+  net.6.layer1.net.0                                           Conv1d  [294,912 params]
+  net.6.layer1.net.1                                           BatchNorm1d  [1,536 params]
+  net.6.layer1.net.2                                           ReLU
+  net.6.layer1.net.3                                           Conv1d  [48,384 params]
+  net.6.layer1.net.4                                           BatchNorm1d  [1,536 params]
+  net.6.layer1.net.5                                           ReLU
+  net.6.layer1.net.6                                           Conv1d  [294,912 params]
+  net.6.layer1.net.7                                           BatchNorm1d  [768 params]
+  net.6.layers                                                 ModuleList
+  net.6.layers.0                                               IBConv
+  net.6.layers.0.net                                           Sequential
+  net.6.layers.0.net.0                                         Conv1d  [294,912 params]
+  net.6.layers.0.net.1                                         BatchNorm1d  [1,536 params]
+  net.6.layers.0.net.2                                         ReLU
+  net.6.layers.0.net.3                                         Conv1d  [48,384 params]
+  net.6.layers.0.net.4                                         BatchNorm1d  [1,536 params]
+  net.6.layers.0.net.5                                         ReLU
+  net.6.layers.0.net.6                                         Conv1d  [294,912 params]
+  net.6.layers.0.net.7                                         BatchNorm1d  [768 params]
+  net.6.layers.1                                               IBConv
+  net.6.layers.1.net                                           Sequential
+  net.6.layers.1.net.0                                         Conv1d  [294,912 params]
+  net.6.layers.1.net.1                                         BatchNorm1d  [1,536 params]
+  net.6.layers.1.net.2                                         ReLU
+  net.6.layers.1.net.3                                         Conv1d  [48,384 params]
+  net.6.layers.1.net.4                                         BatchNorm1d  [1,536 params]
+  net.6.layers.1.net.5                                         ReLU
+  net.6.layers.1.net.6                                         Conv1d  [294,912 params]
+  net.6.layers.1.net.7                                         BatchNorm1d  [768 params]
+  net.6.residual                                               Sequential
+  net.6.residual.0                                             Conv1d  [147,456 params]
+  net.6.residual.1                                             BatchNorm1d  [768 params]
+  net.7                                                        IBBlock
+  net.7.layer1                                                 IBConv
+  net.7.layer1.net                                             Sequential
+  net.7.layer1.net.0                                           Conv1d  [294,912 params]
+  net.7.layer1.net.1                                           BatchNorm1d  [1,536 params]
+  net.7.layer1.net.2                                           ReLU
+  net.7.layer1.net.3                                           Conv1d  [57,600 params]
+  net.7.layer1.net.4                                           BatchNorm1d  [1,536 params]
+  net.7.layer1.net.5                                           ReLU
+  net.7.layer1.net.6                                           Conv1d  [294,912 params]
+  net.7.layer1.net.7                                           BatchNorm1d  [768 params]
+  net.7.layers                                                 ModuleList
+  net.7.layers.0                                               IBConv
+  net.7.layers.0.net                                           Sequential
+  net.7.layers.0.net.0                                         Conv1d  [294,912 params]
+  net.7.layers.0.net.1                                         BatchNorm1d  [1,536 params]
+  net.7.layers.0.net.2                                         ReLU
+  net.7.layers.0.net.3                                         Conv1d  [57,600 params]
+  net.7.layers.0.net.4                                         BatchNorm1d  [1,536 params]
+  net.7.layers.0.net.5                                         ReLU
+  net.7.layers.0.net.6                                         Conv1d  [294,912 params]
+  net.7.layers.0.net.7                                         BatchNorm1d  [768 params]
+  net.7.layers.1                                               IBConv
+  net.7.layers.1.net                                           Sequential
+  net.7.layers.1.net.0                                         Conv1d  [294,912 params]
+  net.7.layers.1.net.1                                         BatchNorm1d  [1,536 params]
+  net.7.layers.1.net.2                                         ReLU
+  net.7.layers.1.net.3                                         Conv1d  [57,600 params]
+  net.7.layers.1.net.4                                         BatchNorm1d  [1,536 params]
+  net.7.layers.1.net.5                                         ReLU
+  net.7.layers.1.net.6                                         Conv1d  [294,912 params]
+  net.7.layers.1.net.7                                         BatchNorm1d  [768 params]
+  net.7.residual                                               Sequential
+  net.7.residual.0                                             Conv1d  [147,456 params]
+  net.7.residual.1                                             BatchNorm1d  [768 params]
+  net.8                                                        IBConv
+  net.8.net                                                    Sequential
+  net.8.net.0                                                  Conv1d  [294,912 params]
+  net.8.net.1                                                  BatchNorm1d  [1,536 params]
+  net.8.net.2                                                  ReLU
+  net.8.net.3                                                  Conv1d  [66,816 params]
+  net.8.net.4                                                  BatchNorm1d  [1,536 params]
+  net.8.net.5                                                  ReLU
+  net.8.net.6                                                  Conv1d  [294,912 params]
+  net.8.net.7                                                  BatchNorm1d  [768 params]
+  net.9                                                        Conv1d  [294,912 params]
+  net.10                                                       BatchNorm1d  [1,536 params]
+  net.11                                                       ReLU
+  net.12                                                       Conv1d  [22,301 params]
+
+======================================================================

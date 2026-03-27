@@ -27,10 +27,30 @@ speed_perturb = SpeedPerturbation(
     factors=[0.9, 1.0, 1.1]
 )
 
-spec_aug_cut = nn.Sequential(
-    torchaudio.transforms.FrequencyMasking(freq_mask_param=12),
-    torchaudio.transforms.TimeMasking(time_mask_param=20),
-)
+
+
+class SpecSquareCutout(nn.Module):
+    """Zeros out num_holes random square patches per sample in a spectrogram batch.
+
+    Args:
+        num_holes: number of squares to cut per sample
+        hole_size: side length of each square in bins/frames
+    """
+    def __init__(self, num_holes: int = 1, hole_size: int = 20):
+        super().__init__()
+        self.num_holes = num_holes
+        self.hole_size = hole_size
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: (B, F, T)
+        B, F, T = x.shape
+        x = x.clone()
+        for b in range(B):
+            for _ in range(self.num_holes):
+                f0 = random.randint(0, max(0, F - self.hole_size))
+                t0 = random.randint(0, max(0, T - self.hole_size))
+                x[b, f0:f0 + self.hole_size, t0:t0 + self.hole_size] = 0.0
+        return x
 
 
 def encode(transcript):
@@ -91,6 +111,57 @@ def collate_fn(batch):
 
     return tensors, targets, input_lengths, target_lengths
 
+_spec_square_cutout = SpecSquareCutout(num_holes=1, hole_size=20)
+
+def collate_fn_cutout(batch):
+    waveforms, _, transcripts, *_ = zip(*batch)
+
+    feats = [spec_transform(w).squeeze(0).transpose(0, 1) for w in waveforms]
+    input_lengths = torch.tensor([f.shape[0] for f in feats], dtype=torch.long)
+    tensors = pad_sequence(feats, batch_first=True).transpose(1, 2).contiguous()
+
+    tensors = _spec_square_cutout(tensors)
+
+    encoded = [torch.tensor(encode(t), dtype=torch.long) for t in transcripts]
+    target_lengths = torch.tensor([len(e) for e in encoded], dtype=torch.long)
+    targets = pad_sequence(encoded, batch_first=True, padding_value=0)
+
+    return tensors, targets, input_lengths, target_lengths
+
+
+def make_train_collate_fn(use_speed_perturb=False, use_spec_augment=False, use_spec_cutout=False):
+    """Returns a training collate function with the requested augmentations.
+
+    - use_spec_augment: FrequencyMasking (horizontal strips)
+    - use_spec_cutout:  SpecSquareCutout (random squares per sample)
+    """
+    aug_steps = []
+    if use_spec_augment:
+        aug_steps.append(torchaudio.transforms.FrequencyMasking(freq_mask_param=12))
+    if use_spec_cutout:
+        aug_steps.append(SpecSquareCutout(num_holes=1, hole_size=20))
+    spec_aug = nn.Sequential(*aug_steps) if aug_steps else None
+
+    def _collate(batch):
+        waveforms, _, transcripts, *_ = zip(*batch)
+
+        if use_speed_perturb and random.random() < 0.667:
+            waveforms = [speed_perturb(w)[0] for w in waveforms]
+
+        feats = [spec_transform(w).squeeze(0).transpose(0, 1) for w in waveforms]
+        input_lengths = torch.tensor([f.shape[0] for f in feats], dtype=torch.long)
+        tensors = pad_sequence(feats, batch_first=True).transpose(1, 2).contiguous()
+
+        if spec_aug is not None:
+            tensors = spec_aug(tensors)
+
+        encoded = [torch.tensor(encode(t), dtype=torch.long) for t in transcripts]
+        target_lengths = torch.tensor([len(e) for e in encoded], dtype=torch.long)
+        targets = pad_sequence(encoded, batch_first=True, padding_value=0)
+
+        return tensors, targets, input_lengths, target_lengths
+
+    return _collate
 
 
 def get_dataset_lengths(dataset):
@@ -226,7 +297,8 @@ class DistributedBucketBatchSampler(Sampler):
 
 
 def log_epoch(csv_path, epoch, train_loss, val_loss, train_wer, val_wer,
-              prev_train_loss=None, prev_val_loss=None, prev_train_wer=None, prev_val_wer=None):
+              prev_train_loss=None, prev_val_loss=None, prev_train_wer=None, prev_val_wer=None,
+              run_id=None):
     def pct(current, previous):
         if previous is None:
             return ""
@@ -239,11 +311,13 @@ def log_epoch(csv_path, epoch, train_loss, val_loss, train_wer, val_wer,
         writer = csv.writer(f)
         if write_header:
             writer.writerow([
+                "run_id",
                 "epoch",
                 "train_loss", "val_loss", "train_loss_delta_%", "val_loss_delta_%",
                 "train_wer",  "val_wer",  "train_wer_delta_%",  "val_wer_delta_%",
             ])
         writer.writerow([
+            run_id or "",
             epoch,
             f"{train_loss:.6f}", f"{val_loss:.6f}",
             pct(train_loss, prev_train_loss), pct(val_loss, prev_val_loss),

@@ -1,5 +1,7 @@
 """Writes a human-readable training config / model spec to the checkpoint directory."""
 
+from __future__ import annotations
+
 import datetime
 import torch.nn as nn
 from pathlib import Path
@@ -14,6 +16,19 @@ def _layer_summary(model: nn.Module) -> list[str]:
         param_str = f"  [{params:,} params]" if params > 0 else ""
         lines.append(f"  {name:<60} {type(module).__name__}{param_str}")
     return lines
+
+
+def _augmentation_lines(augmentation: dict | None) -> list[str]:
+    def _flag(val: bool) -> str:
+        return "ON " if val else "OFF"
+
+    if augmentation is None:
+        augmentation = {}
+    return [
+        f"  Speed perturbation : {_flag(augmentation.get('speed_perturb', False))}",
+        f"  SpecAugment        : {_flag(augmentation.get('spec_augment', False))}",
+        f"  SpecCutout         : {_flag(augmentation.get('spec_cutout', False))}",
+    ]
 
 
 def write_training_config(
@@ -32,6 +47,9 @@ def write_training_config(
     val_size: int,
     test_size: int,
     device: str,
+    C: int | None = None,
+    expand: int | None = None,
+    augmentation: dict | None = None,
 ):
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     out_path = checkpoint_dir / "training_config.txt"
@@ -39,19 +57,37 @@ def write_training_config(
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
+    if C is not None:
+        header = "  NOTARIUS TRAINING CONFIG"
+        arch_lines = [
+            f"  Architecture  : Notarius (Inverted Bottleneck ASR)",
+            f"  R             : {R}",
+            f"  C             : {C}",
+            f"  expand        : {expand}",
+            f"  n_mels        : {n_mels}",
+            f"  n_classes     : {n_classes}",
+            f"  Total params  : {total_params:,}",
+            f"  Trainable     : {trainable_params:,}",
+        ]
+    else:
+        header = "  QUARTZNET TRAINING CONFIG"
+        arch_lines = [
+            f"  Architecture  : QuartzNet (Depthwise-Separable ASR)",
+            f"  R             : {R}",
+            f"  n_mels        : {n_mels}",
+            f"  n_classes     : {n_classes}",
+            f"  Total params  : {total_params:,}",
+            f"  Trainable     : {trainable_params:,}",
+        ]
+
     lines = [
         "=" * 70,
-        "  QUARTZNET TRAINING CONFIG",
+        header,
         f"  Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         "=" * 70,
         "",
         "[ Model ]",
-        f"  Architecture  : QuartzNet (Depthwise-Separable ASR)",
-        f"  R             : {R}",
-        f"  n_mels        : {n_mels}",
-        f"  n_classes     : {n_classes}",
-        f"  Total params  : {total_params:,}",
-        f"  Trainable     : {trainable_params:,}",
+        *arch_lines,
         "",
         "[ Training ]",
         f"  Epochs        : {num_epochs}",
@@ -63,6 +99,9 @@ def write_training_config(
         f"  Loss          : CTCLoss (blank=28, zero_infinity=True)",
         f"  Grad clip     : 1.0",
         f"  Mixed prec.   : bfloat16 (autocast)",
+        "",
+        "[ Augmentation ]",
+        *_augmentation_lines(augmentation),
         "",
         "[ Dataset ]",
         f"  Train size    : {train_size:,}",

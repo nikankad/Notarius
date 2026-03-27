@@ -6,8 +6,8 @@ import torchaudio
 import torchaudio.functional as F
 
 from helpers import blank, idx2char, spec_transform, chars
-from model import QuartzNetBxR
-
+from qnmodel import QuartzNetBxR
+from model import Notarius
 
 # ---------------------------------------------------------------------------
 # Greedy CTC decoder (no LM) — same as original transcribe.py
@@ -63,20 +63,28 @@ def _build_lm_decoder(arpa_path: Path, alpha: float = 0.5, beta: float = 1.5, be
 # ---------------------------------------------------------------------------
 
 def _load_model(checkpoint_path: Path, device: torch.device):
-    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
     config = checkpoint.get("config", {})
-    model = QuartzNetBxR(
-        n_mels=config.get("n_mels", 64),
-        n_classes=config.get("n_classes", 29),
-        B=config.get("B", 5),
-        R=config.get("R", 5),
-    ).to(device)
 
     state_dict = checkpoint.get("model_state_dict", checkpoint)
-
-    # Handle torch.compile() wrapped checkpoints (keys prefixed with "_orig_mod.")
     if any(k.startswith("_orig_mod.") for k in state_dict.keys()):
         state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
+
+    is_notarius = any("layer1" in k for k in state_dict.keys())
+    if is_notarius:
+        model = Notarius(
+            n_mels=config.get("n_mels", 64),
+            n_classes=config.get("n_classes", 29),
+            R=config.get("R", 3),
+            expand=2,
+            C=192,
+        ).to(device)
+    else:
+        model = QuartzNetBxR(
+            n_mels=config.get("n_mels", 64),
+            n_classes=config.get("n_classes", 29),
+            R=config.get("R", 5),
+        ).to(device)
 
     model.load_state_dict(state_dict)
     model.eval()
