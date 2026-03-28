@@ -21,7 +21,8 @@ from helpers import (
     collate_fn_test,
     get_dataset_lengths,
     log_epoch,
-    collate_fn_cutout
+    collate_fn_cutout,
+    collate_fn_speed_perturb
 )
 from model import Notarius
 from model_spec import write_training_config
@@ -153,7 +154,7 @@ def _build_dataloaders(train_ds, val_ds, test_ds, batch_size, num_workers, rank,
     train_loader = DataLoader(
         train_ds,
         batch_sampler=train_sampler,
-        collate_fn=collate_fn_cutout,
+        collate_fn=collate_fn_speed_perturb,
         **_loader_kwargs(num_workers),
     )
 
