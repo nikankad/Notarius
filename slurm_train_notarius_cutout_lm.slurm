@@ -11,7 +11,7 @@
 
 cd "$HOME/Notarius" || exit 1
 
-source ~/.bashrc
+eval "$(~/miniconda3/bin/conda shell.bash hook)"
 conda activate NotariusConda
 
 python --version
