@@ -70,12 +70,15 @@ def _load_model(checkpoint_path, device):
         ).to(device)
         model_name = "Notarius"
     else:
+        B = config.get("B", 5)
+        R = config.get("R", 5)
         model = QuartzNetBxR(
             n_mels=config.get("n_mels", 64),
             n_classes=config.get("n_classes", 29),
-            R=config.get("R", 5),
+            B=B,
+            R=R,
         ).to(device)
-        model_name = "QuartzNet"
+        model_name = f"QuartzNet-{B}x{R}"
 
     model.load_state_dict(state_dict)
     model.eval()

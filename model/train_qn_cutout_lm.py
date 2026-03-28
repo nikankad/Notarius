@@ -210,7 +210,7 @@ def _build_dataloaders(train_ds, val_ds, test_ds, batch_size, num_workers, rank,
     return train_loader, val_loader, test_loader, per_device_batch_size
 
 
-def _build_inference_payload(model, R, epoch, best_val_loss, best_val_wer, run_id=None):
+def _build_inference_payload(model, B, R, epoch, best_val_loss, best_val_wer, run_id=None):
     return {
         "run_id": run_id,
         "epoch": epoch,
@@ -218,6 +218,7 @@ def _build_inference_payload(model, R, epoch, best_val_loss, best_val_wer, run_i
         "best_val_wer": best_val_wer,
         "model_state_dict": model.state_dict(),
         "config": {
+            "B": B,
             "R": R,
             "n_mels": 64,
             "n_classes": 29,
@@ -237,6 +238,7 @@ def _reduce_train_metrics(total_loss, total_word_errors, total_ref_words, num_ba
 
 
 def train_model(
+    B=5,
     R=5,
     num_epochs=50,
     warmup_epochs=2,
@@ -282,10 +284,10 @@ def train_model(
             print(f"Dataset sizes | train: {len(train_ds)} | val: {len(val_ds)} | test: {len(test_ds)}")
             print(f"Dataloader batches | train: {len(train_loader)} | val: {len(val_loader)} | test: {len(test_loader)}")
             print(f"Batch sizes | global target: {batch_size} | per GPU: {per_device_batch_size}")
-            print(f"Starting training for {num_epochs} epochs with QuartzNet R={R}")
+            print(f"Starting training for {num_epochs} epochs with QuartzNet-{B}x{R}")
             print(f"Augmentation: SpecCutout | Val decoder: 6-gram LM beam search (beam={beam_width})")
 
-        base_model = QuartzNetBxR(n_mels=64, n_classes=29, R=R).to(device)
+        base_model = QuartzNetBxR(n_mels=64, n_classes=29, B=B, R=R).to(device)
         total_params = sum(p.numel() for p in base_model.parameters())
         if is_main:
             print(f"Model parameters: {total_params:,}")
@@ -328,6 +330,7 @@ def train_model(
             write_training_config(
                 model=base_model,
                 checkpoint_dir=run_dir,
+                B=B,
                 R=R,
                 n_mels=64,
                 n_classes=29,
@@ -558,6 +561,7 @@ def train_model(
                     "best_val_loss": best_val_loss,
                     "best_val_wer": best_val_wer,
                     "config": {
+                        "B": B,
                         "R": R,
                         "n_mels": 64,
                         "n_classes": 29,
@@ -571,7 +575,7 @@ def train_model(
                 if avg_val_wer <= best_val_wer:
                     best_ckpt_path = run_dir / "best.pt"
                     _save_checkpoint(best_ckpt_path, _build_inference_payload(
-                        base_model, R, epoch, best_val_loss, best_val_wer, run_id
+                        base_model, B, R, epoch, best_val_loss, best_val_wer, run_id
                     ))
                     print(f"New best checkpoint (val WER LM: {avg_val_wer:.2f}%): {best_ckpt_path}")
 
@@ -586,7 +590,7 @@ def train_model(
 
         if is_main:
             final_model_path = run_dir / "final_model.pt"
-            torch.save(_build_inference_payload(base_model, R, num_epochs - 1, best_val_loss, best_val_wer, run_id), final_model_path)
+            torch.save(_build_inference_payload(base_model, B, R, num_epochs - 1, best_val_loss, best_val_wer, run_id), final_model_path)
             print(f"Saved final model weights: {final_model_path}")
 
         return base_model, train_losses, val_losses
@@ -600,7 +604,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--resume", default=None)
     parser.add_argument("--epochs", type=int, default=50)
-    parser.add_argument("--R", type=int, default=5)
+    parser.add_argument("--B", type=int, default=5, help="Model depth: 5 (QuartzNet-5x5), 10 (10x5), or 15 (15x5)")
+    parser.add_argument("--R", type=int, default=5, help="Number of modules per block")
     parser.add_argument("--lr", type=float, default=0.005)
     parser.add_argument("--warmup", type=int, default=2)
     parser.add_argument("--batch-size", type=int, default=180)
@@ -641,6 +646,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     train_model(
+        B=args.B,
         R=args.R,
         num_epochs=args.epochs,
         warmup_epochs=args.warmup,

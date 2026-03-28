@@ -26,10 +26,10 @@ nvidia-smi
 
 torchrun --standalone --nproc_per_node=2 model/train_qn.py \
   --epochs 50 \
+  --B 5 \
   --R 5 \
   --lr 0.005 \
   --warmup 2 \
   --batch-size 180 \
   --output-dir outputs/quartznet \
-  --log-aug-speed \
   --num-workers 8

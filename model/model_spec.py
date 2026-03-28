@@ -62,6 +62,7 @@ def write_training_config(
     val_size: int,
     test_size: int,
     device: str,
+    B: int | None = None,
     C: int | None = None,
     expand: int | None = None,
     augmentation: dict | None = None,
@@ -88,13 +89,16 @@ def write_training_config(
     else:
         header = "  QUARTZNET TRAINING CONFIG"
         arch_lines = [
-            f"  Architecture  : QuartzNet (Depthwise-Separable ASR)",
+            f"  Architecture  : QuartzNet-{B}x{R} (Depthwise-Separable ASR)" if B else f"  Architecture  : QuartzNet (Depthwise-Separable ASR)",
+            f"  B             : {B}" if B else None,
             f"  R             : {R}",
             f"  n_mels        : {n_mels}",
             f"  n_classes     : {n_classes}",
             f"  Total params  : {total_params:,}",
             f"  Trainable     : {trainable_params:,}",
         ]
+        # Filter out None values
+        arch_lines = [line for line in arch_lines if line is not None]
 
     lines = [
         "=" * 70,
