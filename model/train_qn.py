@@ -31,11 +31,12 @@ load_dotenv()
 root = os.getenv("ROOT")
 
 
-def _generate_run_id(aug_label: str = "") -> str:
+def _generate_run_id(B: int, R: int, aug_label: str = "") -> str:
     slurm_id = os.environ.get("SLURM_JOB_ID")
     ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     suffix = f"-{aug_label}" if aug_label else ""
-    return f"quartznet{suffix}-{slurm_id}" if slurm_id else f"quartznet{suffix}-{ts}"
+    model_spec = f"{B}x{R}"
+    return f"quartznet-{model_spec}{suffix}-{slurm_id}" if slurm_id else f"quartznet-{model_spec}{suffix}-{ts}"
 
 
 def _env_int(name: str, default: int) -> int:
@@ -154,7 +155,7 @@ def _build_dataloaders(train_ds, val_ds, test_ds, batch_size, num_workers, rank,
     train_loader = DataLoader(
         train_ds,
         batch_sampler=train_sampler,
-        collate_fn=collate_fn,
+        collate_fn=collate_fn_cutout,
         **_loader_kwargs(num_workers),
     )
 
@@ -225,7 +226,7 @@ def train_model(
     is_main = _is_main_process(rank)
 
     if run_id is None:
-        run_id = _generate_run_id()
+        run_id = _generate_run_id(B, R)
 
     run_dir = _resolve_checkpoint_dir(output_base) / run_id
     log_csv = str(run_dir / "training_log.csv")
@@ -602,7 +603,7 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         compile_model=not args.no_compile,
-        run_id=_generate_run_id("-".join(filter(None, [
+        run_id=_generate_run_id(args.B, args.R, "-".join(filter(None, [
             "speed" if args.log_aug_speed else "",
             "specaug" if args.log_aug_specaugment else "",
             "cutout" if args.log_aug_speccutout else "",

@@ -32,4 +32,5 @@ torchrun --standalone --nproc_per_node=4 model/train_qn.py \
   --warmup 2 \
   --batch-size 180 \
   --output-dir outputs/quartznet \
-  --num-workers 8
+  --num-workers 8\
+  --log-aug-speccutout
