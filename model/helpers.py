@@ -36,7 +36,7 @@ class SpecSquareCutout(nn.Module):
         num_holes: number of squares to cut per sample
         hole_size: side length of each square in bins/frames
     """
-    def __init__(self, num_holes: int = 1, hole_size: int = 20):
+    def __init__(self, num_holes: int = 1, hole_size: int = 100):
         super().__init__()
         self.num_holes = num_holes
         self.hole_size = hole_size
@@ -68,8 +68,7 @@ def collate_fn_speed_perturb(batch):
     waveforms, _, transcripts, *_ = zip(*batch)
 
     # Apply random speed perturbation per utterance for training-time augmentation.
-    if random.random() < 0.667:
-        waveforms = [speed_perturb(w)[0] for w in waveforms]
+    waveforms = [speed_perturb(w)[0] for w in waveforms]
 
     # Compute mel features per sample (no raw-audio padding first)
     feats = [spec_transform(w).squeeze(0).transpose(0, 1) for w in waveforms]

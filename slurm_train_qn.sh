@@ -25,4 +25,5 @@ python -m torch.distributed.run --standalone --nproc_per_node=4 model/train_qn.p
   --lr 0.005 \
   --warmup 2 \
   --batch-size 180 \
-  --output-dir outputs/quartznet
+  --output-dir outputs/quartznet \
+  --log-aug-speccutout

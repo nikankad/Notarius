@@ -153,7 +153,7 @@ def _build_dataloaders(train_ds, val_ds, test_ds, batch_size, num_workers, rank,
     train_loader = DataLoader(
         train_ds,
         batch_sampler=train_sampler,
-        collate_fn=collate_fn,
+        collate_fn=collate_fn_cutout,
         **_loader_kwargs(num_workers),
     )
 
@@ -290,6 +290,8 @@ def train_model(
                 model=base_model,
                 checkpoint_dir=run_dir,
                 R=R,
+                C=C,
+                expand=expand,
                 n_mels=64,
                 n_classes=29,
                 num_epochs=num_epochs,
@@ -301,6 +303,7 @@ def train_model(
                 val_size=len(val_ds),
                 test_size=len(test_ds),
                 device=f"{device} | world_size={world_size} | per_device_batch_size={per_device_batch_size}",
+                augmentation=augmentation,
             )
 
         start_epoch = 0

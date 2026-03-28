@@ -21,6 +21,7 @@ from helpers import (
     collate_fn_test,
     get_dataset_lengths,
     log_epoch,
+    collate_fn_cutout
 )
 from qnmodel import QuartzNetBxR
 from model_spec import write_training_config
@@ -215,6 +216,7 @@ def train_model(
     num_workers=16,
     compile_model=True,
     run_id=None,
+    augmentation=None,
 ):
     rank, local_rank, world_size, device = _setup_distributed()
     is_main = _is_main_process(rank)
@@ -295,6 +297,7 @@ def train_model(
                 val_size=len(val_ds),
                 test_size=len(test_ds),
                 device=f"{device} | world_size={world_size} | per_device_batch_size={per_device_batch_size}",
+                augmentation=augmentation,
             )
 
         start_epoch = 0
