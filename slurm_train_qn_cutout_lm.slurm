@@ -12,7 +12,7 @@
 cd "$HOME/Notarius" || exit 1
 
 source ~/.bashrc
-source Notariusvenv/bin/activate
+conda activate NotariusConda
 
 python --version
 which python

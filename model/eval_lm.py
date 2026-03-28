@@ -1,6 +1,7 @@
 """Evaluate a trained checkpoint on dev-clean and test-clean using greedy + LM beam search."""
 
 import argparse
+import csv
 import os
 import time
 from pathlib import Path
@@ -151,6 +152,12 @@ def main():
     if args.num_workers > 0:
         loader_kwargs["prefetch_factor"] = 4
 
+    # CSV output next to checkpoint
+    checkpoint_dir = Path(args.checkpoint).resolve().parent
+    csv_path = checkpoint_dir / "eval_lm.csv"
+    write_header = not csv_path.exists()
+
+    results = []
     for split_name, split_url in [("dev-clean", "dev-clean"), ("test-clean", "test-clean")]:
         print(f"\n{'='*60}")
         print(f"Evaluating: {split_name}")
@@ -169,7 +176,35 @@ def main():
         print(f"  LM WER    : {lm_wer:.2f}%")
         print(f"  Time       : {elapsed:.1f}s")
 
-    print()
+        results.append({
+            "split": split_name,
+            "greedy_wer": greedy_wer,
+            "lm_wer": lm_wer,
+            "time_s": elapsed,
+        })
+
+    with open(csv_path, "a", newline="") as f:
+        writer = csv.writer(f)
+        if write_header:
+            writer.writerow([
+                "model", "checkpoint", "split",
+                "greedy_wer", "lm_wer",
+                "lm_arpa", "lm_alpha", "lm_beta", "beam_width",
+            ])
+        for r in results:
+            writer.writerow([
+                model_name,
+                Path(args.checkpoint).name,
+                r["split"],
+                f"{r['greedy_wer']:.4f}",
+                f"{r['lm_wer']:.4f}",
+                args.arpa,
+                args.lm_alpha,
+                args.lm_beta,
+                args.beam_width,
+            ])
+
+    print(f"\nResults saved to: {csv_path}")
 
 
 if __name__ == "__main__":
