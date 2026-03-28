@@ -33,3 +33,4 @@ torchrun --standalone --nproc_per_node=2 model/train_notarius_cutout_lm.py \
   --beam-width 100 \
   --lm-alpha 0.5 \
   --lm-beta 1.5
+
