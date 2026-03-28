@@ -9,7 +9,7 @@
 #SBATCH --gres=gpu:a100:2,gpumem:40G
 #SBATCH --output=logs/slurm-%j.out
 
-cd /home/nikan.kadkhodazadeh/Notarius || exit 1
+cd "$HOME/Notarius" || exit 1
 
 source ~/.bashrc
 

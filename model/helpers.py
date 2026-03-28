@@ -11,7 +11,6 @@ import torchaudio
 # define vocabulary
 chars = "abcdefghijklmnopqrstuvwxyz '"  # 26 + space + apostrophe = 28 chars
 blank = len(chars)                       # 28 = CTC blank token
-num_classes = len(chars) + 1            # 29 total
 
 # char to index
 char2idx = {c: i for i, c in enumerate(chars)}
@@ -127,40 +126,6 @@ def collate_fn_cutout(batch):
 
     return tensors, targets, input_lengths, target_lengths
 
-
-def make_train_collate_fn(use_speed_perturb=False, use_spec_augment=False, use_spec_cutout=False):
-    """Returns a training collate function with the requested augmentations.
-
-    - use_spec_augment: FrequencyMasking (horizontal strips)
-    - use_spec_cutout:  SpecSquareCutout (random squares per sample)
-    """
-    aug_steps = []
-    if use_spec_augment:
-        aug_steps.append(torchaudio.transforms.FrequencyMasking(freq_mask_param=12))
-    if use_spec_cutout:
-        aug_steps.append(SpecSquareCutout(num_holes=1, hole_size=20))
-    spec_aug = nn.Sequential(*aug_steps) if aug_steps else None
-
-    def _collate(batch):
-        waveforms, _, transcripts, *_ = zip(*batch)
-
-        if use_speed_perturb and random.random() < 0.667:
-            waveforms = [speed_perturb(w)[0] for w in waveforms]
-
-        feats = [spec_transform(w).squeeze(0).transpose(0, 1) for w in waveforms]
-        input_lengths = torch.tensor([f.shape[0] for f in feats], dtype=torch.long)
-        tensors = pad_sequence(feats, batch_first=True).transpose(1, 2).contiguous()
-
-        if spec_aug is not None:
-            tensors = spec_aug(tensors)
-
-        encoded = [torch.tensor(encode(t), dtype=torch.long) for t in transcripts]
-        target_lengths = torch.tensor([len(e) for e in encoded], dtype=torch.long)
-        targets = pad_sequence(encoded, batch_first=True, padding_value=0)
-
-        return tensors, targets, input_lengths, target_lengths
-
-    return _collate
 
 
 def get_dataset_lengths(dataset):

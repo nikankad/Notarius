@@ -1,0 +1,2 @@
+run_id,epoch,train_loss,val_loss,train_loss_delta_%,val_loss_delta_%,train_wer,val_wer,train_wer_delta_%,val_wer_delta_%
+notarius-20260328-021714,1,4.102164,2.232921,,,99.9252,98.4633,,

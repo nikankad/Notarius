@@ -1,0 +1,60 @@
+QuartzNet 5x5 Baseline (QN-raw) Training Config
+================================================
+
+Model
+-----
+Architecture:       QuartzNet 5x5 (model_old.py)
+Parameters:         7,259,933 (~7.26M)
+Pointwise kernel:   1 (paper default)
+Residuals:          Block-level only (paper default)
+Normalization:      BatchNorm
+Bias:               True (default, paper uses False)
+
+Dataset
+-------
+Train:              train-other-500 (40% subset, ~60k utterances)
+Val:                dev-clean (full, ~2.7k utterances)
+Test:               test-clean (full, ~2.6k utterances)
+Features:           64 mel bins, hop_length=160, n_fft=400, sample_rate=16000
+
+Augmentation
+------------
+Speed perturbation: OFF
+SpecAugment:        OFF
+SpecCutout:         OFF
+
+Optimizer
+---------
+Type:               NovoGrad
+Learning rate:      0.05
+Betas:              (0.95, 0.5)
+Weight decay:       0.001
+Grad clipping:      max_norm=1.0
+
+LR Schedule
+-----------
+Warmup:             2 epochs (linear, start_factor=0.01)
+Decay:              Cosine annealing, eta_min=1e-3
+Step-based:         Yes (scheduler.step() per batch)
+
+Training
+--------
+Epochs:             50
+Batch size:         256
+Precision:          BF16 (autocast, no GradScaler)
+Compilation:        torch.compile()
+Loss:               CTCLoss(blank=28, zero_infinity=True)
+Best checkpoint:    Based on val WER
+
+DataLoader
+----------
+Workers:            16
+Pin memory:         True
+Persistent workers: True
+Prefetch factor:    4
+Batching:           BucketBatchSampler (200 buckets)
+
+Hardware
+--------
+GPU:                RTX 4090 (24GB)
+CUDA device:        0

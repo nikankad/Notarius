@@ -1,0 +1,5 @@
+run_id,epoch,train_loss,val_loss,train_loss_delta_%,val_loss_delta_%,train_wer,val_wer,train_wer_delta_%,val_wer_delta_%
+quartznet-cutout-lm-20260328-121219,1,4.376716,2.887313,,,112.3446,99.9890,,
+quartznet-cutout-lm-20260328-121219,2,2.662677,1.738025,-39.16,-39.80,97.8571,93.0499,-12.90,-6.94
+quartznet-cutout-lm-20260328-121219,3,1.767602,1.184650,-33.62,-31.84,89.6815,84.4914,-8.35,-9.20
+quartznet-cutout-lm-20260328-121219,4,1.452400,1.036368,-17.83,-12.52,82.2201,77.9089,-8.32,-7.79
