@@ -31,4 +31,4 @@ torchrun --standalone --nproc_per_node=2 model/train_notarius_cutout_speed.py \
   --log-aug-speed \
   --log-aug-speccutout \
   --num-workers 8 \
-  --resume /home/nikan.kadkhodazadeh/Notarius/outputs/notarius/notarius-speed-cutout-242823/last.pt 
+  --resume /home/nikan.kadkhodazadeh/Notarius/outputs/notarius/notarius-speed-cutout-242844/last.pt 
