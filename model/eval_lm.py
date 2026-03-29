@@ -1,4 +1,4 @@
-"""Evaluate a trained checkpoint on dev-clean and test-clean using greedy + LM beam search."""
+"""Evaluate a trained checkpoint on test-clean and test-other using greedy + LM beam search."""
 
 import argparse
 import csv
@@ -161,7 +161,7 @@ def main():
     write_header = not csv_path.exists()
 
     results = []
-    for split_name, split_url in [("dev-clean", "dev-clean"), ("test-clean", "test-clean")]:
+    for split_name, split_url in [("test-clean", "test-clean"), ("test-other", "test-other")]:
         print(f"\n{'='*60}")
         print(f"Evaluating: {split_name}")
         print(f"{'='*60}")
