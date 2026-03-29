@@ -34,4 +34,5 @@ torchrun --standalone --nproc_per_node=4 model/train_qn_cutout_speed.py \
   --output-dir outputs/quartznet \
   --num-workers 8\
   --log-aug-speed \
-  --log-aug-speccutout 
+  --log-aug-speccutout \
+  --resume /home/nikan.kadkhodazadeh/Notarius/outputs/quartznet/quartznet-5x5-speed-cutout-242845/last.pt \
