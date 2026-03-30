@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 from torch_optimizer import NovoGrad
 from torchaudio.datasets import LIBRISPEECH
 
-from helpers import (
+from ..helpers import (
     BucketBatchSampler,
     DistributedBucketBatchSampler,
     batch_word_errors_and_count,
@@ -24,8 +24,8 @@ from helpers import (
     log_epoch,
     collate_fn_cutout_speed,
 )
-from qnmodel import QuartzNetBxR
-from model.scripts.model_spec import write_training_config
+from ..qnmodel import QuartzNetBxR
+from ..scripts.model_spec import write_training_config
 
 load_dotenv()
 root = os.getenv("ROOT")
