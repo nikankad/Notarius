@@ -30,7 +30,7 @@ torchrun --standalone --nproc_per_node=4 model/train_qn_cutout_speed.py \
   --R 5 \
   --lr 0.005 \
   --warmup 2 \
-  --batch-size 180 \
+  --batch-size 720 \
   --output-dir outputs/quartznet \
   --num-workers 8\
   --log-aug-speed \
