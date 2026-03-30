@@ -1,9 +1,9 @@
-# Notarius
+# IBNet
 English speech to text deep learning model based on QuartzNet, with an inverted bottleneck architecture replacing the standard time-channel separable convolutions.
 
 ## Architecture
 
-Notarius keeps the same macro-structure as QuartzNet (C1 → B1–B5 → C2 → C3 → C4 with block-level residuals) but replaces the core convolution module and makes several other changes.
+IBNet keeps the same macro-structure as QuartzNet (C1 → B1–B5 → C2 → C3 → C4 with block-level residuals) but replaces the core convolution module and makes several other changes.
 
 ### QuartzNet baseline
 
@@ -15,7 +15,7 @@ Depthwise Conv → Pointwise Conv → BN → (optional ReLU)
 
 The block adds a 1×1 pointwise residual from input to output, applies ReLU after the add, and uses fixed channel widths (256 for B1–B2, 512 for B3–B5, 1024 for C3).
 
-### Notarius changes
+### IBNet changes
 
 **1. Inverted Bottleneck module (`IBConv`) replaces `TSCConv`**
 
@@ -49,7 +49,7 @@ Fixed QuartzNet widths are replaced by a single `C` parameter. Block channels ar
 
 **5. Expand factor `t=2` (default)**
 
-QuartzNet expands channels only at the C3 head (256→1024, ×4). Notarius expands within every conv module at ratio `t` (default 2), keeping mid-channel count manageable.
+QuartzNet expands channels only at the C3 head (256→1024, ×4). IBNet expands within every conv module at ratio `t` (default 2), keeping mid-channel count manageable.
 
 ## Save and reuse training progress
 

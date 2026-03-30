@@ -1,8 +1,10 @@
+import sys
+from pathlib import Path
+
 import datetime
 import os
 import random
 import time
-from pathlib import Path
 
 import torch
 import torch.distributed as dist
@@ -17,25 +19,24 @@ from helpers import (
     BucketBatchSampler,
     DistributedBucketBatchSampler,
     batch_word_errors_and_count,
-    collate_fn,
     collate_fn_test,
     get_dataset_lengths,
     log_epoch,
     collate_fn_cutout,
+    collate_fn_cutout_speed
 )
-from qnmodel import QuartzNetBxR
-from model_spec import write_training_config
+from model import IBNet
+from model.scripts.model_spec import write_training_config
 
 load_dotenv()
 root = os.getenv("ROOT")
 
 
-def _generate_run_id(B: int, R: int, aug_label: str = "") -> str:
+def _generate_run_id(aug_label: str = "") -> str:
     slurm_id = os.environ.get("SLURM_JOB_ID")
     ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     suffix = f"-{aug_label}" if aug_label else ""
-    model_spec = f"{B}x{R}"
-    return f"quartznet-{model_spec}{suffix}-{slurm_id}" if slurm_id else f"quartznet-{model_spec}{suffix}-{ts}"
+    return f"ibnet{suffix}-{slurm_id}" if slurm_id else f"ibnet{suffix}-{ts}"
 
 
 def _env_int(name: str, default: int) -> int:
@@ -105,10 +106,10 @@ def _build_datasets():
     val_ds = LIBRISPEECH(root=root, url="dev-clean", download=False)
     test_ds = LIBRISPEECH(root=root, url="test-clean", download=False)
 
-    rng = random.Random(42)
-    indices = list(range(len(train_ds)))
-    rng.shuffle(indices)
-    train_ds = Subset(train_ds, indices[:2 * len(train_ds) // 5])
+    # rng = random.Random(42)
+    # indices = list(range(len(train_ds)))
+    # rng.shuffle(indices)
+    # train_ds = Subset(train_ds, indices[:2 * len(train_ds) // 5])
     return train_ds, val_ds, test_ds
 
 
@@ -126,18 +127,21 @@ def _loader_kwargs(num_workers: int) -> dict:
 def _build_dataloaders(train_ds, val_ds, test_ds, batch_size, num_workers, rank, world_size):
     if _is_main_process(rank):
         print("Pre-computing dataset lengths for bucket batching...")
-        train_lengths_all = get_dataset_lengths(train_ds.dataset)
+        # train_lengths_all = get_dataset_lengths(train_ds.dataset)
+        train_lengths_all = get_dataset_lengths(train_ds)
         val_lengths = get_dataset_lengths(val_ds)
         test_lengths = get_dataset_lengths(test_ds)
     _barrier()
 
     if not _is_main_process(rank):
-        train_lengths_all = get_dataset_lengths(train_ds.dataset)
+        # train_lengths_all = get_dataset_lengths(train_ds.dataset)
+        train_lengths_all = get_dataset_lengths(train_ds)
         val_lengths = None
         test_lengths = None
 
     per_device_batch_size = batch_size if world_size == 1 else max(1, batch_size // world_size)
-    train_lengths = [train_lengths_all[i] for i in train_ds.indices]
+    # train_lengths = [train_lengths_all[i] for i in train_ds.indices]
+    train_lengths = train_lengths_all
 
     if world_size > 1:
         train_sampler = DistributedBucketBatchSampler(
@@ -154,7 +158,7 @@ def _build_dataloaders(train_ds, val_ds, test_ds, batch_size, num_workers, rank,
     train_loader = DataLoader(
         train_ds,
         batch_sampler=train_sampler,
-        collate_fn=collate_fn_cutout,
+        collate_fn=collate_fn_cutout_speed,
         **_loader_kwargs(num_workers),
     )
 
@@ -179,7 +183,7 @@ def _build_dataloaders(train_ds, val_ds, test_ds, batch_size, num_workers, rank,
     return train_loader, val_loader, test_loader, per_device_batch_size
 
 
-def _build_inference_payload(model, B, R, epoch, best_val_loss, best_val_wer, run_id=None):
+def _build_inference_payload(model, R, C, expand, epoch, best_val_loss, best_val_wer, run_id=None):
     return {
         "run_id": run_id,
         "epoch": epoch,
@@ -187,8 +191,9 @@ def _build_inference_payload(model, B, R, epoch, best_val_loss, best_val_wer, ru
         "best_val_wer": best_val_wer,
         "model_state_dict": model.state_dict(),
         "config": {
-            "B": B,
             "R": R,
+            "C": C,
+            "expand": expand,
             "n_mels": 64,
             "n_classes": 29,
         },
@@ -207,12 +212,13 @@ def _reduce_train_metrics(total_loss, total_word_errors, total_ref_words, num_ba
 
 
 def train_model(
-    B=5,
-    R=5,
+    R=3,
+    C=192,
+    expand=2,
     num_epochs=50,
     warmup_epochs=2,
     lr=0.005,
-    output_base="outputs/quartznet",
+    output_base="outputs/ibnet",
     save_every=10,
     resume_from=None,
     batch_size=180,
@@ -225,7 +231,7 @@ def train_model(
     is_main = _is_main_process(rank)
 
     if run_id is None:
-        run_id = _generate_run_id(B, R)
+        run_id = _generate_run_id()
 
     run_dir = _resolve_checkpoint_dir(output_base) / run_id
     log_csv = str(run_dir / "training_log.csv")
@@ -243,9 +249,9 @@ def train_model(
             print(f"Dataset sizes | train: {len(train_ds)} | val: {len(val_ds)} | test: {len(test_ds)}")
             print(f"Dataloader batches | train: {len(train_loader)} | val: {len(val_loader)} | test: {len(test_loader)}")
             print(f"Batch sizes | global target: {batch_size} | per GPU: {per_device_batch_size}")
-            print(f"Starting training for {num_epochs} epochs with QuartzNet-{B}x{R}")
+            print(f"Starting training for {num_epochs} epochs with IBNet R={R}, C={C}, expand={expand}")
 
-        base_model = QuartzNetBxR(n_mels=64, n_classes=29, B=B, R=R).to(device)
+        base_model = IBNet(n_mels=64, n_classes=29, R=R, expand=expand, C=C).to(device)
         total_params = sum(p.numel() for p in base_model.parameters())
         if is_main:
             print(f"Model parameters: {total_params:,}")
@@ -288,8 +294,9 @@ def train_model(
             write_training_config(
                 model=base_model,
                 checkpoint_dir=run_dir,
-                B=B,
                 R=R,
+                C=C,
+                expand=expand,
                 n_mels=64,
                 n_classes=29,
                 num_epochs=num_epochs,
@@ -509,8 +516,9 @@ def train_model(
                     "best_val_loss": best_val_loss,
                     "best_val_wer": best_val_wer,
                     "config": {
-                        "B": B,
                         "R": R,
+                        "C": C,
+                        "expand": expand,
                         "n_mels": 64,
                         "n_classes": 29,
                     },
@@ -523,7 +531,7 @@ def train_model(
                 if avg_val_wer <= best_val_wer:
                     best_ckpt_path = run_dir / "best.pt"
                     _save_checkpoint(best_ckpt_path, _build_inference_payload(
-                        base_model, B, R, epoch, best_val_loss, best_val_wer, run_id
+                        base_model, R, C, expand, epoch, best_val_loss, best_val_wer, run_id
                     ))
                     print(f"New best checkpoint (val WER: {avg_val_wer:.2f}%): {best_ckpt_path}")
 
@@ -538,7 +546,7 @@ def train_model(
 
         if is_main:
             final_model_path = run_dir / "final_model.pt"
-            torch.save(_build_inference_payload(base_model, B, R, num_epochs - 1, best_val_loss, best_val_wer, run_id), final_model_path)
+            torch.save(_build_inference_payload(base_model, R, C, expand, num_epochs - 1, best_val_loss, best_val_wer, run_id), final_model_path)
             print(f"Saved final model weights: {final_model_path}")
 
         return base_model, train_losses, val_losses
@@ -552,14 +560,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--resume", default=None)
     parser.add_argument("--epochs", type=int, default=50)
-    parser.add_argument("--B", type=int, default=5, help="Model depth: 5 (QuartzNet-5x5), 10 (10x5), or 15 (15x5)")
-    parser.add_argument("--R", type=int, default=5, help="Number of modules per block")
+    parser.add_argument("--R", type=int, default=3)
+    parser.add_argument("--C", type=int, default=192, help="Base channel width (192=8.2M, 172=6.7M, 256=14.1M)")
+    parser.add_argument("--expand", type=int, default=2, help="Inverted bottleneck expansion factor")
     parser.add_argument("--lr", type=float, default=0.005)
     parser.add_argument("--warmup", type=int, default=2)
     parser.add_argument("--batch-size", type=int, default=180)
     parser.add_argument("--num-workers", type=int, default=8)
     parser.add_argument("--save-every", type=int, default=10)
-    parser.add_argument("--output-dir", default="outputs/quartznet", help="Base output dir; run saved to <output-dir>/<run-id>/")
+    parser.add_argument("--output-dir", default="outputs/ibnet", help="Base output dir; run saved to <output-dir>/<run-id>/")
     parser.add_argument("--no-compile", action="store_true")
     parser.add_argument("--log-aug-speed", action="store_true", help="Label this run as using speed perturbation (config/checkpoint only)")
     parser.add_argument("--log-aug-specaugment", action="store_true", help="Label this run as using SpecAugment (config/checkpoint only)")
@@ -584,6 +593,10 @@ if __name__ == "__main__":
         errors.append("--batch-size must be >= 1")
     if args.num_workers < 0:
         errors.append("--num-workers must be >= 0")
+    if args.C < 1:
+        errors.append("--C must be >= 1")
+    if args.expand < 1:
+        errors.append("--expand must be >= 1")
 
     if errors:
         for error in errors:
@@ -591,8 +604,9 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     train_model(
-        B=args.B,
         R=args.R,
+        C=args.C,
+        expand=args.expand,
         num_epochs=args.epochs,
         warmup_epochs=args.warmup,
         lr=args.lr,
@@ -602,7 +616,7 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         compile_model=not args.no_compile,
-        run_id=_generate_run_id(args.B, args.R, "-".join(filter(None, [
+        run_id=_generate_run_id("-".join(filter(None, [
             "speed" if args.log_aug_speed else "",
             "specaug" if args.log_aug_specaugment else "",
             "cutout" if args.log_aug_speccutout else "",

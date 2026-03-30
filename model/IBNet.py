@@ -68,7 +68,7 @@ class IBBlock(nn.Module):
         out = out + self.residual(x)
         return torch.relu(out)
 
-class Notarius(nn.Module):
+class IBNet(nn.Module):
     # [MODIFIED] expand=4 → expand=2.
     # With expand=4 and 512 channels: mid=2048, each pointwise = 512×2048 = 1M params.
     # That gave you 41.9M total — 6× larger than QuartzNet 5x5.

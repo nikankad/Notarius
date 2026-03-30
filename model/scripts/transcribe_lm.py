@@ -7,7 +7,7 @@ import torchaudio.functional as F
 
 from helpers import blank, idx2char, spec_transform, chars
 from qnmodel import QuartzNetBxR
-from model import Notarius
+from model import IBNet
 
 # ---------------------------------------------------------------------------
 # Greedy CTC decoder (no LM) — same as original transcribe.py
@@ -70,9 +70,9 @@ def _load_model(checkpoint_path: Path, device: torch.device):
     if any(k.startswith("_orig_mod.") for k in state_dict.keys()):
         state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
 
-    is_notarius = any("layer1" in k for k in state_dict.keys())
-    if is_notarius:
-        model = Notarius(
+    is_ibnet = any("layer1" in k for k in state_dict.keys())
+    if is_ibnet:
+        model = IBNet(
             n_mels=config.get("n_mels", 64),
             n_classes=config.get("n_classes", 29),
             R=config.get("R", 3),

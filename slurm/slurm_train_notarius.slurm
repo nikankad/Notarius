@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=notarius-train
+#SBATCH --job-name=ibnet-train
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -27,6 +27,6 @@ torchrun --standalone --nproc_per_node=2 model/train_notarius.py \
   --lr 0.005 \
   --warmup 2 \
   --batch-size 180 \
-  --output-dir outputs/notarius \
+  --output-dir outputs/ibnet \
   --log-aug-speed \
   --num-workers 8

@@ -19,7 +19,7 @@ from helpers import (
     idx2char,
     word_edit_distance,
 )
-from model import Notarius
+from model import IBNet
 from qnmodel import QuartzNetBxR
 
 root = os.getenv("ROOT")
@@ -57,16 +57,16 @@ def _load_model(checkpoint_path, device):
     if any(k.startswith("_orig_mod.") for k in state_dict.keys()):
         state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
 
-    is_notarius = any("layer1" in k for k in state_dict.keys())
-    if is_notarius:
-        model = Notarius(
+    is_ibnet = any("layer1" in k for k in state_dict.keys())
+    if is_ibnet:
+        model = IBNet(
             n_mels=config.get("n_mels", 64),
             n_classes=config.get("n_classes", 29),
             R=config.get("R", 3),
             expand=config.get("expand", 2),
             C=config.get("C", 192),
         ).to(device)
-        model_name = "Notarius"
+        model_name = "IBNet"
     else:
         B = config.get("B", 5)
         R = config.get("R", 5)

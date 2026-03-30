@@ -75,9 +75,9 @@ def write_training_config(
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
     if C is not None:
-        header = "  NOTARIUS TRAINING CONFIG"
+        header = "  IBNET TRAINING CONFIG"
         arch_lines = [
-            f"  Architecture  : Notarius (Inverted Bottleneck ASR)",
+            f"  Architecture  : IBNet (Inverted Bottleneck ASR)",
             f"  R             : {R}",
             f"  C             : {C}",
             f"  expand        : {expand}",

@@ -25,7 +25,7 @@ from helpers import (
     collate_fn_cutout_speed,
 )
 from qnmodel import QuartzNetBxR
-from model_spec import write_training_config
+from model.scripts.model_spec import write_training_config
 
 load_dotenv()
 root = os.getenv("ROOT")

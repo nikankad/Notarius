@@ -17,14 +17,15 @@ from helpers import (
     BucketBatchSampler,
     DistributedBucketBatchSampler,
     batch_word_errors_and_count,
+    collate_fn,
     collate_fn_test,
     get_dataset_lengths,
     log_epoch,
     collate_fn_cutout,
-    collate_fn_cutout_speed
+    collate_fn_speed_perturb
 )
-from model import Notarius
-from model_spec import write_training_config
+from model import IBNet
+from scripts.model_spec import write_training_config
 
 load_dotenv()
 root = os.getenv("ROOT")
@@ -34,7 +35,7 @@ def _generate_run_id(aug_label: str = "") -> str:
     slurm_id = os.environ.get("SLURM_JOB_ID")
     ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     suffix = f"-{aug_label}" if aug_label else ""
-    return f"notarius{suffix}-{slurm_id}" if slurm_id else f"notarius{suffix}-{ts}"
+    return f"ibnet{suffix}-{slurm_id}" if slurm_id else f"ibnet{suffix}-{ts}"
 
 
 def _env_int(name: str, default: int) -> int:
@@ -104,10 +105,10 @@ def _build_datasets():
     val_ds = LIBRISPEECH(root=root, url="dev-clean", download=False)
     test_ds = LIBRISPEECH(root=root, url="test-clean", download=False)
 
-    # rng = random.Random(42)
-    # indices = list(range(len(train_ds)))
-    # rng.shuffle(indices)
-    # train_ds = Subset(train_ds, indices[:2 * len(train_ds) // 5])
+    rng = random.Random(42)
+    indices = list(range(len(train_ds)))
+    rng.shuffle(indices)
+    train_ds = Subset(train_ds, indices[:2 * len(train_ds) // 5])
     return train_ds, val_ds, test_ds
 
 
@@ -125,21 +126,18 @@ def _loader_kwargs(num_workers: int) -> dict:
 def _build_dataloaders(train_ds, val_ds, test_ds, batch_size, num_workers, rank, world_size):
     if _is_main_process(rank):
         print("Pre-computing dataset lengths for bucket batching...")
-        # train_lengths_all = get_dataset_lengths(train_ds.dataset)
-        train_lengths_all = get_dataset_lengths(train_ds)
+        train_lengths_all = get_dataset_lengths(train_ds.dataset)
         val_lengths = get_dataset_lengths(val_ds)
         test_lengths = get_dataset_lengths(test_ds)
     _barrier()
 
     if not _is_main_process(rank):
-        # train_lengths_all = get_dataset_lengths(train_ds.dataset)
-        train_lengths_all = get_dataset_lengths(train_ds)
+        train_lengths_all = get_dataset_lengths(train_ds.dataset)
         val_lengths = None
         test_lengths = None
 
     per_device_batch_size = batch_size if world_size == 1 else max(1, batch_size // world_size)
-    # train_lengths = [train_lengths_all[i] for i in train_ds.indices]
-    train_lengths = train_lengths_all
+    train_lengths = [train_lengths_all[i] for i in train_ds.indices]
 
     if world_size > 1:
         train_sampler = DistributedBucketBatchSampler(
@@ -156,7 +154,7 @@ def _build_dataloaders(train_ds, val_ds, test_ds, batch_size, num_workers, rank,
     train_loader = DataLoader(
         train_ds,
         batch_sampler=train_sampler,
-        collate_fn=collate_fn_cutout_speed,
+        collate_fn=collate_fn_speed_perturb,
         **_loader_kwargs(num_workers),
     )
 
@@ -216,7 +214,7 @@ def train_model(
     num_epochs=50,
     warmup_epochs=2,
     lr=0.005,
-    output_base="outputs/notarius",
+    output_base="outputs/ibnet",
     save_every=10,
     resume_from=None,
     batch_size=180,
@@ -247,9 +245,9 @@ def train_model(
             print(f"Dataset sizes | train: {len(train_ds)} | val: {len(val_ds)} | test: {len(test_ds)}")
             print(f"Dataloader batches | train: {len(train_loader)} | val: {len(val_loader)} | test: {len(test_loader)}")
             print(f"Batch sizes | global target: {batch_size} | per GPU: {per_device_batch_size}")
-            print(f"Starting training for {num_epochs} epochs with Notarius R={R}, C={C}, expand={expand}")
+            print(f"Starting training for {num_epochs} epochs with IBNet R={R}, C={C}, expand={expand}")
 
-        base_model = Notarius(n_mels=64, n_classes=29, R=R, expand=expand, C=C).to(device)
+        base_model = IBNet(n_mels=64, n_classes=29, R=R, expand=expand, C=C).to(device)
         total_params = sum(p.numel() for p in base_model.parameters())
         if is_main:
             print(f"Model parameters: {total_params:,}")
@@ -566,7 +564,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch-size", type=int, default=180)
     parser.add_argument("--num-workers", type=int, default=8)
     parser.add_argument("--save-every", type=int, default=10)
-    parser.add_argument("--output-dir", default="outputs/notarius", help="Base output dir; run saved to <output-dir>/<run-id>/")
+    parser.add_argument("--output-dir", default="outputs/ibnet", help="Base output dir; run saved to <output-dir>/<run-id>/")
     parser.add_argument("--no-compile", action="store_true")
     parser.add_argument("--log-aug-speed", action="store_true", help="Label this run as using speed perturbation (config/checkpoint only)")
     parser.add_argument("--log-aug-specaugment", action="store_true", help="Label this run as using SpecAugment (config/checkpoint only)")

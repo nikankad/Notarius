@@ -17,13 +17,13 @@ from helpers import (
     BucketBatchSampler,
     DistributedBucketBatchSampler,
     batch_word_errors_and_count,
-    collate_fn,
     collate_fn_test,
     get_dataset_lengths,
     log_epoch,
+    collate_fn_speed_perturb,
 )
 from qnmodel import QuartzNetBxR
-from model_spec import write_training_config
+from model.scripts.model_spec import write_training_config
 
 load_dotenv()
 root = os.getenv("ROOT")
@@ -153,7 +153,7 @@ def _build_dataloaders(train_ds, val_ds, test_ds, batch_size, num_workers, rank,
     train_loader = DataLoader(
         train_ds,
         batch_sampler=train_sampler,
-        collate_fn=collate_fn,
+        collate_fn=collate_fn_speed_perturb,
         **_loader_kwargs(num_workers),
     )
 
