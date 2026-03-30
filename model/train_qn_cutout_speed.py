@@ -1,6 +1,6 @@
 import datetime
 import os
-import random
+# import random
 import time
 from pathlib import Path
 
@@ -9,7 +9,8 @@ import torch.distributed as dist
 import torch.nn as nn
 from dotenv import load_dotenv
 from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.utils.data import DataLoader, Subset
+# from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader
 from torch_optimizer import NovoGrad
 from torchaudio.datasets import LIBRISPEECH
 
@@ -105,10 +106,10 @@ def _build_datasets():
     val_ds = LIBRISPEECH(root=root, url="dev-clean", download=False)
     test_ds = LIBRISPEECH(root=root, url="test-clean", download=False)
 
-    rng = random.Random(42)
-    indices = list(range(len(train_ds)))
-    rng.shuffle(indices)
-    train_ds = Subset(train_ds, indices[:2 * len(train_ds) // 5])
+    # rng = random.Random(42)
+    # indices = list(range(len(train_ds)))
+    # rng.shuffle(indices)
+    # train_ds = Subset(train_ds, indices[:2 * len(train_ds) // 5])
     return train_ds, val_ds, test_ds
 
 
@@ -126,18 +127,21 @@ def _loader_kwargs(num_workers: int) -> dict:
 def _build_dataloaders(train_ds, val_ds, test_ds, batch_size, num_workers, rank, world_size):
     if _is_main_process(rank):
         print("Pre-computing dataset lengths for bucket batching...")
-        train_lengths_all = get_dataset_lengths(train_ds.dataset)
+        # train_lengths_all = get_dataset_lengths(train_ds.dataset)
+        train_lengths_all = get_dataset_lengths(train_ds)
         val_lengths = get_dataset_lengths(val_ds)
         test_lengths = get_dataset_lengths(test_ds)
     _barrier()
 
     if not _is_main_process(rank):
-        train_lengths_all = get_dataset_lengths(train_ds.dataset)
+        # train_lengths_all = get_dataset_lengths(train_ds.dataset)
+        train_lengths_all = get_dataset_lengths(train_ds)
         val_lengths = None
         test_lengths = None
 
     per_device_batch_size = batch_size if world_size == 1 else max(1, batch_size // world_size)
-    train_lengths = [train_lengths_all[i] for i in train_ds.indices]
+    # train_lengths = [train_lengths_all[i] for i in train_ds.indices]
+    train_lengths = train_lengths_all
 
     if world_size > 1:
         train_sampler = DistributedBucketBatchSampler(

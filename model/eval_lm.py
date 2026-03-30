@@ -7,7 +7,6 @@ import time
 from pathlib import Path
 
 import torch
-from dotenv import load_dotenv
 from torch.utils.data import DataLoader
 from torchaudio.datasets import LIBRISPEECH
 
@@ -23,7 +22,6 @@ from helpers import (
 from model import Notarius
 from qnmodel import QuartzNetBxR
 
-load_dotenv()
 root = os.getenv("ROOT")
 
 DEFAULT_ARPA = "lm/6gram.arpa"
@@ -166,7 +164,7 @@ def main():
         print(f"Evaluating: {split_name}")
         print(f"{'='*60}")
 
-        ds = LIBRISPEECH(root=root, url=split_url, download=False)
+        ds = LIBRISPEECH(root=root, url=split_url, download=True)
         lengths = get_dataset_lengths(ds)
         sampler = BucketBatchSampler(lengths, batch_size=args.batch_size, shuffle=False)
         loader = DataLoader(ds, batch_sampler=sampler, collate_fn=collate_fn_test, **loader_kwargs)

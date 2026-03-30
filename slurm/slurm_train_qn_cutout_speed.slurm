@@ -25,14 +25,13 @@ python -c "import torch; print(torch.__version__)"
 nvidia-smi
 
 torchrun --standalone --nproc_per_node=4 model/train_qn_cutout_speed.py \
-  --epochs 100 \
+  --epochs 150 \
   --B 5 \
   --R 5 \
   --lr 0.005 \
   --warmup 2 \
   --batch-size 180 \
   --output-dir outputs/quartznet \
-  --num-workers 8\
+  --num-workers 8 \
   --log-aug-speed \
-  --log-aug-speccutout \
-  --resume /home/nikan.kadkhodazadeh/Notarius/outputs/quartznet/quartznet-5x5-speed-cutout-242845/last.pt \
+  --log-aug-speccutout

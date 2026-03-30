@@ -20,7 +20,7 @@ python -c "import torch; print(torch.__version__)"
 nvidia-smi
 
 torchrun --standalone --nproc_per_node=2 model/train_notarius_cutout_speed.py \
-  --epochs 100 \
+  --epochs 150 \
   --R 3 \
   --C 192 \
   --expand 2 \
@@ -30,5 +30,4 @@ torchrun --standalone --nproc_per_node=2 model/train_notarius_cutout_speed.py \
   --output-dir outputs/notarius \
   --log-aug-speed \
   --log-aug-speccutout \
-  --num-workers 8 \
-  --resume /home/nikan.kadkhodazadeh/Notarius/outputs/notarius/notarius-speed-cutout-242848/last.pt 
+  --num-workers 8
