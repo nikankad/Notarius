@@ -127,6 +127,7 @@ def main():
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--num-workers", type=int, default=8)
     parser.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"])
+    parser.add_argument("--csv", default=None, help="Path to shared CSV file to append results to")
     args = parser.parse_args()
 
     if args.device == "auto":
@@ -153,13 +154,16 @@ def main():
     if args.num_workers > 0:
         loader_kwargs["prefetch_factor"] = 4
 
-    # CSV output next to checkpoint
-    checkpoint_dir = Path(args.checkpoint).resolve().parent
-    csv_path = checkpoint_dir / "eval_lm.csv"
+    # CSV output — shared file if --csv provided, otherwise next to checkpoint
+    if args.csv:
+        csv_path = Path(args.csv)
+    else:
+        checkpoint_dir = Path(args.checkpoint).resolve().parent
+        csv_path = checkpoint_dir / "eval_lm.csv"
     write_header = not csv_path.exists()
 
     results = []
-    for split_name, split_url in [("test-clean", "test-clean"), ("test-other", "test-other")]:
+    for split_name, split_url in [("dev-clean", "dev-clean"), ("dev-other", "dev-other"), ("test-clean", "test-clean"), ("test-other", "test-other")]:
         print(f"\n{'='*60}")
         print(f"Evaluating: {split_name}")
         print(f"{'='*60}")

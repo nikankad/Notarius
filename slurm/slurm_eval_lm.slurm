@@ -18,13 +18,16 @@ python --version
 which python
 nvidia-smi
 
+RESULTS_CSV="outputs/eval_results.csv"
+
 # === Evaluate Notarius (cutout) with LM ===
 python model/eval_lm.py \
   --checkpoint outputs/notarius/notarius-cutout-242727/best.pt \
   --arpa model/lm/6gram.arpa \
   --beam-width 100 \
   --lm-alpha 0.5 \
-  --lm-beta 1.5
+  --lm-beta 1.5 \
+  --csv "$RESULTS_CSV"
 
 # === Evaluate QuartzNet (cutout) with LM ===
 python model/eval_lm.py \
@@ -32,4 +35,5 @@ python model/eval_lm.py \
   --arpa model/lm/6gram.arpa \
   --beam-width 100 \
   --lm-alpha 0.5 \
-  --lm-beta 1.5
+  --lm-beta 1.5 \
+  --csv "$RESULTS_CSV"
