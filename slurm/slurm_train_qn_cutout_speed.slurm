@@ -24,8 +24,8 @@ which python
 python -c "import torch; print(torch.__version__)"
 nvidia-smi
 
-torchrun --standalone --nproc_per_node=4 model/train_qn_cutout_speed.py \
-  --epochs 150 \
+torchrun --standalone --nproc_per_node=4 model/train_qn.py \
+  --epochs 50150 \
   --B 5 \
   --R 5 \
   --lr 0.005 \
@@ -33,5 +33,3 @@ torchrun --standalone --nproc_per_node=4 model/train_qn_cutout_speed.py \
   --batch-size 360 \
   --output-dir outputs/quartznet \
   --num-workers 8 \
-  --log-aug-speed \
-  --log-aug-speccutout
