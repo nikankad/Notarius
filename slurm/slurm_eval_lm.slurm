@@ -8,7 +8,6 @@
 #SBATCH --time=08:00:00
 #SBATCH --gres=gpu:a100:1,gpumem:40G
 #SBATCH --output=logs/slurm-%j.out
-#SBATCH --exclude=node-g105,node-g106
 
 cd "$HOME/Notarius" || exit 1
 
