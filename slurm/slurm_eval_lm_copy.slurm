@@ -32,12 +32,7 @@ WEIGHTS="outputs/model_weights"
 # python model/eval_lm.py --checkpoint "$WEIGHTS/Notarius/notarius_cutout_speed_best.pt"  --arpa "$ARPA" --beam-width 100 --lm-alpha 0.5 --lm-beta 1.5 --csv "$RESULTS_CSV"
 
 # === QuartzNet 10x5 ===
-python model/eval_lm.py --checkpoint "$WEIGHTS/QN/QN10x5-raw_best.pt"           --arpa "$ARPA" --beam-width 100 --lm-alpha 0.5 --lm-beta 1.5 --csv "$RESULTS_CSV"
-python model/eval_lm.py --checkpoint "$WEIGHTS/QN/QN10x5_cutout_best.pt"        --arpa "$ARPA" --beam-width 100 --lm-alpha 0.5 --lm-beta 1.5 --csv "$RESULTS_CSV"
-python model/eval_lm.py --checkpoint "$WEIGHTS/QN/QN10x5_cutout_speed_best.pt"  --arpa "$ARPA" --beam-width 100 --lm-alpha 0.5 --lm-beta 1.5 --csv "$RESULTS_CSV"
+python model/eval_lm.py --checkpoint "$WEIGHTS/QN/QN10x5-speed.pt"           --arpa "$ARPA" --beam-width 100 --lm-alpha 0.5 --lm-beta 1.5 --csv "$RESULTS_CSV"
 
 # === QuartzNet 5x5 ===
-python model/eval_lm.py --checkpoint "$WEIGHTS/QN/QN5x5-perturb_best.pt"        --arpa "$ARPA" --beam-width 100 --lm-alpha 0.5 --lm-beta 1.5 --csv "$RESULTS_CSV"
-python model/eval_lm.py --checkpoint "$WEIGHTS/QN/QN5x5-cutout_best.pt"         --arpa "$ARPA" --beam-width 100 --lm-alpha 0.5 --lm-beta 1.5 --csv "$RESULTS_CSV"
-python model/eval_lm.py --checkpoint "$WEIGHTS/QN/Qn5x5_cutout_speed_best.pt"   --arpa "$ARPA" --beam-width 100 --lm-alpha 0.5 --lm-beta 1.5 --csv "$RESULTS_CSV"
-python model/eval_lm.py --checkpoint "$WEIGHTS/QN/QN5x5-raw.pt"        --arpa "$ARPA" --beam-width 100 --lm-alpha 0.5 --lm-beta 1.5 --csv "$RESULTS_CSV"
+python model/eval_lm.py --checkpoint "$WEIGHTS/QN/qn5x5-raw.pt"        --arpa "$ARPA" --beam-width 100 --lm-alpha 0.5 --lm-beta 1.5 --csv "$RESULTS_CSV"
