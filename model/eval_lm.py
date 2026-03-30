@@ -168,7 +168,7 @@ def main():
         print(f"Evaluating: {split_name}")
         print(f"{'='*60}")
 
-        ds = LIBRISPEECH(root=root, url=split_url, download=True)
+        ds = LIBRISPEECH(root=root, url=split_url, download=False)
         lengths = get_dataset_lengths(ds)
         sampler = BucketBatchSampler(lengths, batch_size=args.batch_size, shuffle=False)
         loader = DataLoader(ds, batch_sampler=sampler, collate_fn=collate_fn_test, **loader_kwargs)
