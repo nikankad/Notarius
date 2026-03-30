@@ -7,7 +7,7 @@
 #SBATCH --mem=128G
 #SBATCH --time=24:00:00
 #SBATCH --nodelist=node-g106
-#SBATCH --gres=gpu:a100:2,gpumem:40G
+#SBATCH --gres=gpu:a100:4,gpumem:80G
 #SBATCH --output=logs/slurm-%j.out
 
 cd "$HOME/Notarius" || exit 1
